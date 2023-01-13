@@ -329,6 +329,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   file: points
+  hasMeta: 1
 --- !u!4 &2045470044
 Transform:
   m_ObjectHideFlags: 0
