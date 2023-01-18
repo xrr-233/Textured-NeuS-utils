@@ -1,9 +1,11 @@
+import os
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import cv2
 from matplotlib.patches import Patch
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from PIL import Image
 
 class CameraPoseVisualizer:
     def __init__(self, xlim, ylim, zlim):
@@ -72,3 +74,26 @@ def load_K_Rt_from_P(filename, P=None):
     pose[:3, 3] = (t[:3] / t[3])[:, 0]
 
     return intrinsics, pose
+
+def integrate_imgs():
+    imgs_path = './NeuS_texture/data/imgs'
+    masks_path = './NeuS_texture/data/masks'
+
+    imgs_dir = os.listdir(imgs_path)
+    masks_dir = os.listdir(masks_path)
+
+    res_path = './NeuS_texture/data/imgs_masks'
+    os.makedirs(res_path, exist_ok=True)
+
+    for i in range(len(imgs_dir)):
+        img = Image.open(os.path.join(imgs_path, imgs_dir[i]))
+        mask = Image.open(os.path.join(masks_path, masks_dir[i]))
+
+        img = np.array(img)
+        mask = np.array(mask)
+
+        res = img & mask
+        res = Image.fromarray(res)
+        res.save(os.path.join(res_path, imgs_dir[i]))
+
+integrate_imgs()
