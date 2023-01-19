@@ -45,6 +45,23 @@ public class NewBehaviourScript : MonoBehaviour
                 point.transform.localScale = scale;
             }
         }
+
+        Matrix4x4 extrinsic = new Matrix4x4();
+        extrinsic[0, 0] = 0.6502f;
+        extrinsic[0, 1] = -0.4492f;
+        extrinsic[0, 2] = 0.6127f;
+        extrinsic[0, 3] = -0.7896f;
+        extrinsic[1, 0] = 0.4382f;
+        extrinsic[1, 1] = 0.8805f;
+        extrinsic[1, 2] = 0.1806f;
+        extrinsic[1, 3] = -0.2568f;
+        extrinsic[2, 0] = -0.6207f;
+        extrinsic[2, 1] = 0.1511f;
+        extrinsic[2, 2] = 0.7694f;
+        extrinsic[2, 3] = -1.1867f;
+        extrinsic[3, 3] = 1f;
+        Quaternion rotation = extrinsic.rotation;
+        GameObject.Find("Sphere").transform.rotation = rotation;
     }
 
     // Update is called once per frame
