@@ -76,7 +76,7 @@ def load_K_Rt_from_P(filename, P=None):
     return intrinsics, pose
 
 def integrate_imgs():
-    imgs_path = './NeuS_texture/data/imgs'
+    imgs_path = 'NeuS_texture/data/imgs_original'
     masks_path = './NeuS_texture/data/masks'
 
     imgs_dir = os.listdir(imgs_path)

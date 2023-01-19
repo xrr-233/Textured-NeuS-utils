@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from NeuS_texture.models.embedder import get_embedder
+from models.embedder import get_embedder
 
 
 # This implementation is borrowed from IDR: https://github.com/lioryariv/idr
