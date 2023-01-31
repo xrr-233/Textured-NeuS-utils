@@ -5,6 +5,7 @@
 import pickle
 import open3d as o3d
 import numpy as np
+from tqdm import tqdm
 from utils import CameraPoseVisualizer, load_K_Rt_from_P
 
 def render_point_cloud(path):
@@ -47,6 +48,7 @@ def load_npz(path):
     for key in npz_point_cloud:
         print(key)
         print(npz_point_cloud[key].shape)
+        print(npz_point_cloud[key])
 
 def render_camera_extrinsic_params(path):
     """
@@ -54,7 +56,9 @@ def render_camera_extrinsic_params(path):
     :param path:
     :return:
     """
+    print("Loading...")
     npz = np.load(path)
+    print("Loaded.")
     n_images = int(len(npz) / 6)
 
     # world_mat is a projection matrix from world to image
@@ -66,12 +70,26 @@ def render_camera_extrinsic_params(path):
     intrinsics_all = []
     pose_all = []
 
-    for scale_mat, world_mat in zip(scale_mats_np, world_mats_np):
+    idx = 0
+    for scale_mat, world_mat in tqdm(zip(scale_mats_np, world_mats_np)):
+        intrinsics_, pose_ = load_K_Rt_from_P(None, world_mat[:3, :4])
+        if (idx == 29):
+            print(intrinsics_)
+            print(pose_)
         P = world_mat @ scale_mat
+        if (idx == 29):
+            print(idx)
+            print(world_mat)
+            print(scale_mat)
+            print(P)
         P = P[:3, :4]
         intrinsics, pose = load_K_Rt_from_P(None, P)
+        if (idx == 29):
+            print(intrinsics)
+            print(pose)
         intrinsics_all.append(intrinsics)
         pose_all.append(pose)
+        idx += 1
 
     print(pose_all[0])
     min_x = max_x = pose_all[0][0, 3]
@@ -91,7 +109,7 @@ def render_camera_extrinsic_params(path):
     visualizer = CameraPoseVisualizer([-2, 2], [-2, 2], [-2, 2])
     for i in range(n_images):
         visualizer.extrinsic2pyramid(pose_all[i], focal_len_scaled=0.25, aspect_ratio=0.3)
-    # visualizer.show()
+    visualizer.show()
 
 def load_pickle(path):
     """
@@ -104,6 +122,5 @@ def load_pickle(path):
     print(data)
 
 if (__name__=="__main__"):
-    npz_path = "data/public_data/bmvs_dog/preprocessed/cameras_sphere.npz"
-    # load_npz(npz_path)
-    render_camera_params(npz_path)
+    npz_path = "../data/public_data/haibao/preprocessed/cameras_sphere.npz"
+    render_camera_extrinsic_params(npz_path)
