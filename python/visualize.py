@@ -3,6 +3,8 @@
 """
 
 import pickle
+
+import matplotlib.pyplot as plt
 import open3d as o3d
 import numpy as np
 from tqdm import tqdm
@@ -121,6 +123,25 @@ def load_pickle(path):
     data = pickle.load(f)
     print(data)
 
+def lr():
+    learning_rate = 5e-4
+    learning_rate_alpha = 0.05
+    warm_up_end = 5000
+    end_iter = 300000
+    res = []
+    for iter_step in range(end_iter):
+        if iter_step < warm_up_end:
+            learning_factor = iter_step / warm_up_end
+        else:
+            alpha = learning_rate_alpha
+            progress = (iter_step - warm_up_end) / (end_iter - warm_up_end)
+            learning_factor = (np.cos(np.pi * progress) + 1.0) * 0.5 * (1 - alpha) + alpha
+
+        res.append(learning_rate * learning_factor)
+    plt.plot(res)
+    plt.savefig('x.png')
+
 if (__name__=="__main__"):
-    npz_path = "../data/public_data/haibao/preprocessed/cameras_sphere.npz"
-    render_camera_extrinsic_params(npz_path)
+    lr()
+    # npz_path = "../data/public_data/haibao/preprocessed/cameras_sphere.npz"
+    # render_camera_extrinsic_params(npz_path)
