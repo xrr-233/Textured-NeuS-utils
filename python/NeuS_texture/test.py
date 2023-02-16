@@ -53,7 +53,10 @@ class BlendedMVSDataset(Dataset):
             if f.endswith('.obj'):
                 mesh = o3d.io.read_triangle_mesh(os.path.join(textured_mesh_path, f), True)
                 mesh.compute_vertex_normals()  # allow light effect
-                self.meshes.append(mesh)
+                self.meshes.append({
+                    'name': f[:-4],
+                    'geometry': mesh,
+                })
 
         filename_root = os.path.join(filename_root, filename, filename, filename)
         self.camera_images = os.listdir(os.path.join(filename_root, 'blended_images'))
@@ -73,12 +76,12 @@ class BlendedMVSDataset(Dataset):
                     all_lines[2].split(' ')[:4],
                     all_lines[3].split(' ')[:4],
                     all_lines[4].split(' ')[:4],
-                ])
+                ], dtype=np.float64)
                 intrinsic = np.array([
                     all_lines[7].split(' ')[:3],
                     all_lines[8].split(' ')[:3],
                     all_lines[9].split(' ')[:3],
-                ])
+                ], dtype=np.float64)
                 self.camera_extrinsics.append(extrinsic)
                 self.camera_intrinsics.append(intrinsic)
 
@@ -88,10 +91,16 @@ class BlendedMVSDataset(Dataset):
         elif identifier >= self.__len__():
             print('idx exceeds max model number!')
             exit(-1)
-        print(self.W, self.H)
         renderer = o3d.visualization.rendering.OffscreenRenderer(self.W, self.H)  # EGL Headless is not supported on this platform.
-        renderer.setup_camera(self.camera_intrinsics[identifier], self.camera_extrinsics[identifier])
-        o3d.visualization.draw_geometries(self.meshes, mesh_show_back_face=mesh_show_back_face)
+        pinhole_intrinsic = o3d.camera.PinholeCameraIntrinsic()
+        pinhole_intrinsic.intrinsic_matrix = self.camera_intrinsics[identifier]
+        renderer.setup_camera(pinhole_intrinsic, self.camera_extrinsics[identifier])
+        for mesh in self.meshes:
+            renderer.scene.add_geometry(mesh['name'], mesh['geometry'], mesh['geometry'], mesh_show_back_face=mesh_show_back_face)
+
+        rendered_image = renderer.render_to_image()
+        o3d.io.write_image(f'{os.getcwd()}/rendered_image.png', rendered_image)
+        # o3d.visualization.draw_geometries(self.meshes, mesh_show_back_face=mesh_show_back_face)
 
 
 class TexturedNeUSDataset(Dataset):
@@ -99,6 +108,7 @@ class TexturedNeUSDataset(Dataset):
 
 
 if __name__ == '__main__':
-    dataset = BlendedMVSDataset('E:')
+    # dataset = BlendedMVSDataset('E:')
+    dataset = BlendedMVSDataset('/media/xrr/UBUNTU 22_0')
     dataset.load_single_model(1)  # 以大鼎为例
     dataset.visualize(0, True)
