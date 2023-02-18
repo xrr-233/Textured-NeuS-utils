@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import open3d as o3d
+from matplotlib import pyplot as plt
 from open3d.visualization import gui
 from PIL import Image
 
@@ -89,18 +90,24 @@ class BlendedMVSDataset(Dataset):
     def visualize(self, identifier, mesh_show_back_face=True, is_filename=False):
         if is_filename:
             identifier = self.camera_images.index(f"{identifier}.jpg")
-        elif identifier >= self.__len__():
+        elif identifier >= len(self.camera_images):
             print('idx exceeds max model number!')
             exit(-1)
-        pinhole_parameters = o3d.camera.PinholeCameraParameters()
-        pinhole_intrinsic = o3d.camera.PinholeCameraIntrinsic()
-        pinhole_intrinsic.intrinsic_matrix = self.camera_intrinsics[identifier]
-        pinhole_parameters.intrinsic = pinhole_intrinsic
-        pinhole_parameters.extrinsic = self.camera_extrinsics[identifier]
-        renderer = o3d.visualization.Visualizer()
+
+        trajectory = []
+        for i in range(len(self.camera_images)):
+            pinhole_parameters = o3d.camera.PinholeCameraParameters()
+            pinhole_intrinsic = o3d.camera.PinholeCameraIntrinsic()
+            pinhole_intrinsic.intrinsic_matrix = self.camera_intrinsics[i]
+            pinhole_parameters.intrinsic = pinhole_intrinsic
+            pinhole_parameters.extrinsic = self.camera_extrinsics[i]
+            trajectory.append(pinhole_parameters)
+        pinhole_trajectory = o3d.camera.PinholeCameraTrajectory()
+        pinhole_trajectory.parameters = trajectory
+
+        '''renderer = o3d.visualization.Visualizer()
         renderer.create_window(width=self.W, height=self.H)
         renderer.get_render_option().mesh_show_back_face = mesh_show_back_face
-        print(renderer.get_view_control())
         renderer.get_view_control().convert_from_pinhole_camera_parameters(pinhole_parameters, True)  # https://github.com/isl-org/Open3D/issues/1164
         for mesh in self.meshes:
             renderer.add_geometry(mesh['geometry'])
@@ -108,8 +115,50 @@ class BlendedMVSDataset(Dataset):
         renderer.destroy_window()
         # renderer.show(True)
         # rendered_image = renderer.render_to_image()
-        # o3d.io.write_image(f'{os.getcwd()}/rendered_image.png', rendered_image)
-        # o3d.visualization.draw_geometries(self.meshes, mesh_show_back_face=mesh_show_back_face)
+        # o3d.io.write_image(f'{os.getcwd()}/rendered_image.png', rendered_image)'''
+
+        custom_draw_geometry_with_camera_trajectory = {
+            'index': -1,
+            'trajectory': pinhole_trajectory,
+            'vis': o3d.visualization.Visualizer()
+        }
+        print(custom_draw_geometry_with_camera_trajectory)
+
+        def move_forward(vis):
+            # This function is called within the o3d.visualization.Visualizer::run() loop
+            # The run loop calls the function, then re-render
+            # So the sequence in this function is to:
+            # 1. Capture frame
+            # 2. index++, check ending criteria
+            # 3. Set camera
+            # 4. (Re-render)
+            ctr = vis.get_view_control()
+            glb = custom_draw_geometry_with_camera_trajectory
+            os.makedirs('image', exist_ok=True)
+            if glb['index'] >= 0:
+                print(f"Capture image {self.camera_images[glb['index']][:-4]}.png")
+                vis.capture_screen_image(f"image/{self.camera_images[glb['index']][:-4]}.png", False)
+            glb['index'] = glb['index'] + 1
+            if glb['index'] < len(glb['trajectory'].parameters):
+                ctr.convert_from_pinhole_camera_parameters(
+                    glb['trajectory'].parameters[glb['index']], allow_arbitrary=True)
+            else:
+                custom_draw_geometry_with_camera_trajectory['vis']. \
+                    register_animation_callback(None)
+            return False
+
+        vis = custom_draw_geometry_with_camera_trajectory['vis']
+        print(self.W, self.H)
+        vis.create_window(width=self.W, height=self.H)
+        for mesh in self.meshes:
+            vis.add_geometry(mesh['geometry'])
+        vis.get_render_option().mesh_show_back_face = mesh_show_back_face
+        vis.register_animation_callback(move_forward)
+        vis.run()
+        vis.destroy_window()
+
+        sample_img = Image.open(os.path.join(f"image/00000000.png"))
+        print(sample_img.width, sample_img.height)
 
 
 class TexturedNeUSDataset(Dataset):
