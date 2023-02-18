@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import open3d as o3d
+from open3d.visualization import gui
 from PIL import Image
 
 
@@ -85,21 +86,29 @@ class BlendedMVSDataset(Dataset):
                 self.camera_extrinsics.append(extrinsic)
                 self.camera_intrinsics.append(intrinsic)
 
-    def visualize(self, identifier, mesh_show_back_face, is_filename=False):
+    def visualize(self, identifier, mesh_show_back_face=True, is_filename=False):
         if is_filename:
             identifier = self.camera_images.index(f"{identifier}.jpg")
         elif identifier >= self.__len__():
             print('idx exceeds max model number!')
             exit(-1)
-        renderer = o3d.visualization.rendering.OffscreenRenderer(self.W, self.H)  # EGL Headless is not supported on this platform.
+        pinhole_parameters = o3d.camera.PinholeCameraParameters()
         pinhole_intrinsic = o3d.camera.PinholeCameraIntrinsic()
         pinhole_intrinsic.intrinsic_matrix = self.camera_intrinsics[identifier]
-        renderer.setup_camera(pinhole_intrinsic, self.camera_extrinsics[identifier])
+        pinhole_parameters.intrinsic = pinhole_intrinsic
+        pinhole_parameters.extrinsic = self.camera_extrinsics[identifier]
+        renderer = o3d.visualization.Visualizer()
+        renderer.create_window(width=self.W, height=self.H)
+        renderer.get_render_option().mesh_show_back_face = mesh_show_back_face
+        print(renderer.get_view_control())
+        renderer.get_view_control().convert_from_pinhole_camera_parameters(pinhole_parameters, True)  # https://github.com/isl-org/Open3D/issues/1164
         for mesh in self.meshes:
-            renderer.scene.add_geometry(mesh['name'], mesh['geometry'], mesh['geometry'], mesh_show_back_face=mesh_show_back_face)
-
-        rendered_image = renderer.render_to_image()
-        o3d.io.write_image(f'{os.getcwd()}/rendered_image.png', rendered_image)
+            renderer.add_geometry(mesh['geometry'])
+        renderer.run()
+        renderer.destroy_window()
+        # renderer.show(True)
+        # rendered_image = renderer.render_to_image()
+        # o3d.io.write_image(f'{os.getcwd()}/rendered_image.png', rendered_image)
         # o3d.visualization.draw_geometries(self.meshes, mesh_show_back_face=mesh_show_back_face)
 
 
@@ -108,7 +117,7 @@ class TexturedNeUSDataset(Dataset):
 
 
 if __name__ == '__main__':
-    # dataset = BlendedMVSDataset('E:')
-    dataset = BlendedMVSDataset('/media/xrr/UBUNTU 22_0')
+    dataset = BlendedMVSDataset('E:')
+    # dataset = BlendedMVSDataset('/media/xrr/UBUNTU 22_0')
     dataset.load_single_model(1)  # 以大鼎为例
-    dataset.visualize(0, True)
+    dataset.visualize('00000003', is_filename=True)
