@@ -176,6 +176,11 @@ class BlendedMVSDataset(Dataset):
 
             src_root = os.path.join(filename_root, filename, filename, filename, 'cams')
             cam_dict = dict()
+            convert_mat = np.zeros([4, 4], dtype=np.float32)
+            convert_mat[0, 1] = 1.0
+            convert_mat[1, 0] = 1.0
+            convert_mat[2, 2] = -1.0
+            convert_mat[3, 3] = 1.0
             for index, file in enumerate(os.listdir(src_root)):
                 if file == 'pair.txt':
                     continue
@@ -185,7 +190,10 @@ class BlendedMVSDataset(Dataset):
                     row_2 = all_lines[2].split(' ')[:4]
                     row_3 = all_lines[3].split(' ')[:4]
                     row_4 = all_lines[4].split(' ')[:4]
-                    extrinsic = np.array([row_1, row_2, row_3, row_4], dtype=np.float64)
+                    extrinsic = np.array([row_1, row_2, row_3, row_4], dtype=np.float32)
+                    if index == 0:
+                        print(extrinsic)
+                    extrinsic = extrinsic @ convert_mat
                     row_1 = all_lines[7].split(' ')[:3]
                     row_1.append('0')
                     row_2 = all_lines[8].split(' ')[:3]
@@ -193,7 +201,9 @@ class BlendedMVSDataset(Dataset):
                     row_3 = all_lines[9].split(' ')[:3]
                     row_3.append('0')
                     row_4 = ['0', '0', '0', '1']
-                    intrinsic = np.array([row_1, row_2, row_3, row_4], dtype=np.float64)
+                    intrinsic = np.array([row_1, row_2, row_3, row_4], dtype=np.float32)
+                    if index == 0:
+                        print(intrinsic)
                 w2c = np.linalg.inv(extrinsic)
                 world_mat = intrinsic @ w2c
                 world_mat = world_mat.astype(np.float32)
@@ -201,6 +211,9 @@ class BlendedMVSDataset(Dataset):
                 cam_dict['camera_mat_inv_{}'.format(index)] = np.linalg.inv(intrinsic)
                 cam_dict['world_mat_{}'.format(index)] = world_mat
                 cam_dict['world_mat_inv_{}'.format(index)] = np.linalg.inv(world_mat)
+                if index == 0:
+                    print('camera_mat_{}'.format(index))
+                    print(world_mat)
 
             src_root = os.path.join(self.textured_mesh_dir, filename, 'textured_mesh')
             vertices = []

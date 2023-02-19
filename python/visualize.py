@@ -72,28 +72,18 @@ def render_camera_extrinsic_params(path):
     intrinsics_all = []
     pose_all = []
 
-    idx = 0
-    for scale_mat, world_mat in tqdm(zip(scale_mats_np, world_mats_np)):
+    for index, (scale_mat, world_mat) in tqdm(enumerate(zip(scale_mats_np, world_mats_np))):
         intrinsics_, pose_ = load_K_Rt_from_P(None, world_mat[:3, :4])
-        if (idx == 29):
-            print(intrinsics_)
+        if index == 0:
             print(pose_)
-        P = world_mat @ scale_mat
-        if (idx == 29):
-            print(idx)
+            print(intrinsics_)
             print(world_mat)
-            print(scale_mat)
-            print(P)
+        P = world_mat @ scale_mat
         P = P[:3, :4]
         intrinsics, pose = load_K_Rt_from_P(None, P)
-        if (idx == 29):
-            print(intrinsics)
-            print(pose)
         intrinsics_all.append(intrinsics)
         pose_all.append(pose)
-        idx += 1
 
-    print(pose_all[0])
     min_x = max_x = pose_all[0][0, 3]
     min_y = max_y = pose_all[0][1, 3]
     min_z = max_z = pose_all[0][2, 3]
@@ -104,9 +94,6 @@ def render_camera_extrinsic_params(path):
         max_y = max(max_y, pose_all[i][1, 3])
         min_z = min(min_z, pose_all[i][2, 3])
         max_z = max(max_z, pose_all[i][2, 3])
-    print(f"[{min_x}, {max_x}]")
-    print(f"[{min_y}, {max_y}]")
-    print(f"[{min_z}, {max_z}]")
 
     visualizer = CameraPoseVisualizer([-2, 2], [-2, 2], [-2, 2])
     for i in range(n_images):
@@ -142,6 +129,6 @@ def lr():
     plt.savefig('x.png')
 
 if (__name__=="__main__"):
-    # lr()
     npz_path = "NeuS_texture/BlendedMVS_preprocessed/5a7d3db14989e929563eb153/preprocessed/cameras_sphere.npz"
+    # npz_path = "haibao/preprocessed/cameras_sphere.npz"
     render_camera_extrinsic_params(npz_path)
