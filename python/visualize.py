@@ -142,6 +142,6 @@ def lr():
     plt.savefig('x.png')
 
 if (__name__=="__main__"):
-    lr()
-    # npz_path = "../data/public_data/haibao/preprocessed/cameras_sphere.npz"
-    # render_camera_extrinsic_params(npz_path)
+    # lr()
+    npz_path = "NeuS_texture/BlendedMVS_preprocessed/5a7d3db14989e929563eb153/preprocessed/cameras_sphere.npz"
+    render_camera_extrinsic_params(npz_path)

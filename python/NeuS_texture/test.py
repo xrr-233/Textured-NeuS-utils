@@ -1,9 +1,10 @@
 import os
+import shutil
+import cv2 as cv
 import numpy as np
 import open3d as o3d
-from matplotlib import pyplot as plt
-from open3d.visualization import gui
 from PIL import Image
+from tqdm import tqdm
 
 
 class Dataset:
@@ -87,13 +88,7 @@ class BlendedMVSDataset(Dataset):
                 self.camera_extrinsics.append(extrinsic)
                 self.camera_intrinsics.append(intrinsic)
 
-    def visualize(self, identifier, mesh_show_back_face=True, is_filename=False):
-        if is_filename:
-            identifier = self.camera_images.index(f"{identifier}.jpg")
-        elif identifier >= len(self.camera_images):
-            print('idx exceeds max model number!')
-            exit(-1)
-
+    def generate_baseline_rendered_mesh(self, mesh_show_back_face=True):
         trajectory = []
         for i in range(len(self.camera_images)):
             pinhole_parameters = o3d.camera.PinholeCameraParameters()
@@ -160,6 +155,74 @@ class BlendedMVSDataset(Dataset):
         sample_img = Image.open(os.path.join(f"image/00000000.png"))
         print(sample_img.width, sample_img.height)
 
+    def preprocess_dataset(self):
+        os.makedirs('BlendedMVS_preprocessed', exist_ok=True)
+
+        for i in tqdm(range(self.__len__())):
+            filename_root = self.all_models_root[i]
+            filename = self.all_models[i]
+            os.makedirs(f'BlendedMVS_preprocessed/{filename}', exist_ok=True)
+            os.makedirs(f'BlendedMVS_preprocessed/{filename}/preprocessed', exist_ok=True)
+            os.makedirs(f'BlendedMVS_preprocessed/{filename}/preprocessed/image', exist_ok=True)
+            os.makedirs(f'BlendedMVS_preprocessed/{filename}/preprocessed/mask', exist_ok=True)
+
+            src_root = os.path.join(filename_root, filename, filename, filename, 'blended_images')
+            dst_root = f'BlendedMVS_preprocessed/{filename}/preprocessed'
+            n_images = len(os.listdir(src_root))
+            for index, file in enumerate(os.listdir(src_root)):
+                img = cv.imread(os.path.join(src_root, file))
+                cv.imwrite(os.path.join(dst_root, 'image', '{:0>3d}.png'.format(index)), img)
+                cv.imwrite(os.path.join(dst_root, 'mask', '{:0>3d}.png'.format(index)), np.ones_like(img) * 255)
+
+            src_root = os.path.join(filename_root, filename, filename, filename, 'cams')
+            cam_dict = dict()
+            for index, file in enumerate(os.listdir(src_root)):
+                if file == 'pair.txt':
+                    continue
+                with open(os.path.join(src_root, file), 'r') as f:
+                    all_lines = f.readlines()
+                    row_1 = all_lines[1].split(' ')[:4]
+                    row_2 = all_lines[2].split(' ')[:4]
+                    row_3 = all_lines[3].split(' ')[:4]
+                    row_4 = all_lines[4].split(' ')[:4]
+                    extrinsic = np.array([row_1, row_2, row_3, row_4], dtype=np.float64)
+                    row_1 = all_lines[7].split(' ')[:3]
+                    row_1.append('0')
+                    row_2 = all_lines[8].split(' ')[:3]
+                    row_2.append('0')
+                    row_3 = all_lines[9].split(' ')[:3]
+                    row_3.append('0')
+                    row_4 = ['0', '0', '0', '1']
+                    intrinsic = np.array([row_1, row_2, row_3, row_4], dtype=np.float64)
+                w2c = np.linalg.inv(extrinsic)
+                world_mat = intrinsic @ w2c
+                world_mat = world_mat.astype(np.float32)
+                cam_dict['camera_mat_{}'.format(index)] = intrinsic
+                cam_dict['camera_mat_inv_{}'.format(index)] = np.linalg.inv(intrinsic)
+                cam_dict['world_mat_{}'.format(index)] = world_mat
+                cam_dict['world_mat_inv_{}'.format(index)] = np.linalg.inv(world_mat)
+
+            src_root = os.path.join(self.textured_mesh_dir, filename, 'textured_mesh')
+            vertices = []
+            for f in os.listdir(src_root):
+                if f.endswith('.obj'):
+                    mesh = o3d.io.read_triangle_mesh(os.path.join(src_root, f), True)
+                    # mesh.compute_vertex_normals()  # allow light effect
+                    vertices.append(np.asarray(mesh.vertices))
+            vertices = np.concatenate(vertices, axis=0)
+            bbox_max = np.max(vertices, axis=0)
+            bbox_min = np.min(vertices, axis=0)
+            center = (bbox_max + bbox_min) * 0.5
+            radius = np.linalg.norm(vertices - center, ord=2, axis=-1).max()
+            scale_mat = np.diag([radius, radius, radius, 1.0]).astype(np.float32)
+            scale_mat[:3, 3] = center
+
+            for i in range(n_images):
+                cam_dict['scale_mat_{}'.format(i)] = scale_mat
+                cam_dict['scale_mat_inv_{}'.format(i)] = np.linalg.inv(scale_mat)
+
+            np.savez(os.path.join(dst_root, 'cameras_sphere.npz'), **cam_dict)
+
 
 class TexturedNeUSDataset(Dataset):
     pass
@@ -168,5 +231,6 @@ class TexturedNeUSDataset(Dataset):
 if __name__ == '__main__':
     dataset = BlendedMVSDataset('E:')
     # dataset = BlendedMVSDataset('/media/xrr/UBUNTU 22_0')
-    dataset.load_single_model(1)  # 以大鼎为例
-    dataset.visualize('00000003', is_filename=True)
+    # dataset.load_single_model(2)  # 以大鼎为例
+    # dataset.generate_baseline_rendered_mesh()
+    dataset.preprocess_dataset()
