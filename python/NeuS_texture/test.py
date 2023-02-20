@@ -179,11 +179,11 @@ class BlendedMVSDataset(Dataset):
                 cam_dict['world_mat_{}'.format(index)] = world_mat
                 cam_dict['world_mat_inv_{}'.format(index)] = np.linalg.inv(world_mat)
             self.load_single_model(filename, is_filename=True)
-            visualizer = CameraPoseVisualizer([-2, 2], [-2, 2], [-2, 2])
-            for i in range(self.n_images):
-                visualizer.extrinsic2pyramid(self.camera_extrinsics[i], focal_len_scaled=0.25, aspect_ratio=0.3)
-            visualizer.show()
-            self.generate_baseline_rendered_mesh(save_path=dst_root)
+            # visualizer = CameraPoseVisualizer([-2, 2], [-2, 2], [-2, 2])
+            # for i in range(self.n_images):
+            #     visualizer.extrinsic2pyramid(self.camera_extrinsics[i], focal_len_scaled=0.25, aspect_ratio=0.3)
+            # visualizer.show()
+            # self.generate_baseline_rendered_mesh(save_path=dst_root)
 
             src_root = os.path.join(self.textured_mesh_dir, filename, 'textured_mesh')
             vertices = []
@@ -203,6 +203,17 @@ class BlendedMVSDataset(Dataset):
             for i in range(self.n_images):
                 cam_dict['scale_mat_{}'.format(i)] = scale_mat
                 cam_dict['scale_mat_inv_{}'.format(i)] = np.linalg.inv(scale_mat)
+
+            with open(os.path.join(dst_root, 'points2.txt'), 'w') as f:
+                for i in range(self.n_images):
+                    f.write(f'{self.camera_extrinsics[i][0, 3]} {self.camera_extrinsics[i][1, 3]} {self.camera_extrinsics[i][2, 3]}\n')
+                indices = np.linspace(0, len(vertices), 10000, dtype=int)
+                print(indices[:10])
+                for i in indices:
+                    if(i == len(vertices)):
+                        f.write(f'{vertices[i - 1][0]} {vertices[i - 1][1]} {vertices[i - 1][2]}\n')
+                    else:
+                        f.write(f'{vertices[i][0]} {vertices[i][1]} {vertices[i][2]}\n')
 
             np.savez(os.path.join(dst_root, 'cameras_sphere.npz'), **cam_dict)
 
