@@ -6,6 +6,8 @@ import open3d as o3d
 from PIL import Image
 from tqdm import tqdm
 
+from utils import CameraPoseVisualizer
+
 
 class Dataset:
     def __init__(self, path_root):
@@ -63,34 +65,14 @@ class BlendedMVSDataset(Dataset):
 
         filename_root = os.path.join(filename_root, filename, filename, filename)
         self.camera_images = os.listdir(os.path.join(filename_root, 'blended_images'))
+        self.n_images = len(self.camera_images)
         sample_img = Image.open(os.path.join(filename_root, 'blended_images', self.camera_images[0]))
         self.W = sample_img.width
         self.H = sample_img.height
 
-        self.camera_extrinsics = []
-        self.camera_intrinsics = []
-        for f in os.listdir(os.path.join(filename_root, 'cams')):
-            if f == 'pair.txt':
-                continue
-            with open(os.path.join(filename_root, 'cams', f), 'r') as file:
-                all_lines = file.readlines()
-                extrinsic = np.array([
-                    all_lines[1].split(' ')[:4],
-                    all_lines[2].split(' ')[:4],
-                    all_lines[3].split(' ')[:4],
-                    all_lines[4].split(' ')[:4],
-                ], dtype=np.float64)
-                intrinsic = np.array([
-                    all_lines[7].split(' ')[:3],
-                    all_lines[8].split(' ')[:3],
-                    all_lines[9].split(' ')[:3],
-                ], dtype=np.float64)
-                self.camera_extrinsics.append(extrinsic)
-                self.camera_intrinsics.append(intrinsic)
-
-    def generate_baseline_rendered_mesh(self, mesh_show_back_face=True):
+    def generate_baseline_rendered_mesh(self, mesh_show_back_face=True, save_path='.'):
         trajectory = []
-        for i in range(len(self.camera_images)):
+        for i in range(self.n_images):
             pinhole_parameters = o3d.camera.PinholeCameraParameters()
             pinhole_intrinsic = o3d.camera.PinholeCameraIntrinsic()
             pinhole_intrinsic.intrinsic_matrix = self.camera_intrinsics[i]
@@ -100,24 +82,11 @@ class BlendedMVSDataset(Dataset):
         pinhole_trajectory = o3d.camera.PinholeCameraTrajectory()
         pinhole_trajectory.parameters = trajectory
 
-        '''renderer = o3d.visualization.Visualizer()
-        renderer.create_window(width=self.W, height=self.H)
-        renderer.get_render_option().mesh_show_back_face = mesh_show_back_face
-        renderer.get_view_control().convert_from_pinhole_camera_parameters(pinhole_parameters, True)  # https://github.com/isl-org/Open3D/issues/1164
-        for mesh in self.meshes:
-            renderer.add_geometry(mesh['geometry'])
-        renderer.run()
-        renderer.destroy_window()
-        # renderer.show(True)
-        # rendered_image = renderer.render_to_image()
-        # o3d.io.write_image(f'{os.getcwd()}/rendered_image.png', rendered_image)'''
-
         custom_draw_geometry_with_camera_trajectory = {
             'index': -1,
             'trajectory': pinhole_trajectory,
             'vis': o3d.visualization.Visualizer()
         }
-        print(custom_draw_geometry_with_camera_trajectory)
 
         def move_forward(vis):
             # This function is called within the o3d.visualization.Visualizer::run() loop
@@ -131,8 +100,8 @@ class BlendedMVSDataset(Dataset):
             glb = custom_draw_geometry_with_camera_trajectory
             os.makedirs('image', exist_ok=True)
             if glb['index'] >= 0:
-                print(f"Capture image {self.camera_images[glb['index']][:-4]}.png")
-                vis.capture_screen_image(f"image/{self.camera_images[glb['index']][:-4]}.png", False)
+                print(os.path.join(save_path, 'image_mesh', '{:0>3d}.png'.format(glb['index'])))
+                vis.capture_screen_image(os.path.join(save_path, 'image_mesh', '{:0>3d}.png'.format(glb['index'])), False)
             glb['index'] = glb['index'] + 1
             if glb['index'] < len(glb['trajectory'].parameters):
                 ctr.convert_from_pinhole_camera_parameters(
@@ -152,9 +121,6 @@ class BlendedMVSDataset(Dataset):
         vis.run()
         vis.destroy_window()
 
-        sample_img = Image.open(os.path.join(f"image/00000000.png"))
-        print(sample_img.width, sample_img.height)
-
     def preprocess_dataset(self):
         os.makedirs('BlendedMVS_preprocessed', exist_ok=True)
 
@@ -164,11 +130,12 @@ class BlendedMVSDataset(Dataset):
             os.makedirs(f'BlendedMVS_preprocessed/{filename}', exist_ok=True)
             os.makedirs(f'BlendedMVS_preprocessed/{filename}/preprocessed', exist_ok=True)
             os.makedirs(f'BlendedMVS_preprocessed/{filename}/preprocessed/image', exist_ok=True)
+            os.makedirs(f'BlendedMVS_preprocessed/{filename}/preprocessed/image_mesh', exist_ok=True)
             os.makedirs(f'BlendedMVS_preprocessed/{filename}/preprocessed/mask', exist_ok=True)
 
             src_root = os.path.join(filename_root, filename, filename, filename, 'blended_images')
             dst_root = f'BlendedMVS_preprocessed/{filename}/preprocessed'
-            n_images = len(os.listdir(src_root))
+
             for index, file in enumerate(os.listdir(src_root)):
                 img = cv.imread(os.path.join(src_root, file))
                 cv.imwrite(os.path.join(dst_root, 'image', '{:0>3d}.png'.format(index)), img)
@@ -181,6 +148,8 @@ class BlendedMVSDataset(Dataset):
             convert_mat[1, 0] = 1.0
             convert_mat[2, 2] = -1.0
             convert_mat[3, 3] = 1.0
+            self.camera_extrinsics = []
+            self.camera_intrinsics = []
             for index, file in enumerate(os.listdir(src_root)):
                 if file == 'pair.txt':
                     continue
@@ -191,8 +160,7 @@ class BlendedMVSDataset(Dataset):
                     row_3 = all_lines[3].split(' ')[:4]
                     row_4 = all_lines[4].split(' ')[:4]
                     extrinsic = np.array([row_1, row_2, row_3, row_4], dtype=np.float32)
-                    if index == 0:
-                        print(extrinsic)
+                    self.camera_extrinsics.append(extrinsic)
                     extrinsic = extrinsic @ convert_mat
                     row_1 = all_lines[7].split(' ')[:3]
                     row_1.append('0')
@@ -202,8 +170,7 @@ class BlendedMVSDataset(Dataset):
                     row_3.append('0')
                     row_4 = ['0', '0', '0', '1']
                     intrinsic = np.array([row_1, row_2, row_3, row_4], dtype=np.float32)
-                    if index == 0:
-                        print(intrinsic)
+                    self.camera_intrinsics.append(intrinsic[:3, :3])
                 w2c = np.linalg.inv(extrinsic)
                 world_mat = intrinsic @ w2c
                 world_mat = world_mat.astype(np.float32)
@@ -211,9 +178,12 @@ class BlendedMVSDataset(Dataset):
                 cam_dict['camera_mat_inv_{}'.format(index)] = np.linalg.inv(intrinsic)
                 cam_dict['world_mat_{}'.format(index)] = world_mat
                 cam_dict['world_mat_inv_{}'.format(index)] = np.linalg.inv(world_mat)
-                if index == 0:
-                    print('camera_mat_{}'.format(index))
-                    print(world_mat)
+            self.load_single_model(filename, is_filename=True)
+            visualizer = CameraPoseVisualizer([-2, 2], [-2, 2], [-2, 2])
+            for i in range(self.n_images):
+                visualizer.extrinsic2pyramid(self.camera_extrinsics[i], focal_len_scaled=0.25, aspect_ratio=0.3)
+            visualizer.show()
+            self.generate_baseline_rendered_mesh(save_path=dst_root)
 
             src_root = os.path.join(self.textured_mesh_dir, filename, 'textured_mesh')
             vertices = []
@@ -230,7 +200,7 @@ class BlendedMVSDataset(Dataset):
             scale_mat = np.diag([radius, radius, radius, 1.0]).astype(np.float32)
             scale_mat[:3, 3] = center
 
-            for i in range(n_images):
+            for i in range(self.n_images):
                 cam_dict['scale_mat_{}'.format(i)] = scale_mat
                 cam_dict['scale_mat_inv_{}'.format(i)] = np.linalg.inv(scale_mat)
 

@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import open3d as o3d
 import numpy as np
 from tqdm import tqdm
-from utils import CameraPoseVisualizer, load_K_Rt_from_P
+from python.NeuS_texture.utils import CameraPoseVisualizer, load_K_Rt_from_P
 
 def render_point_cloud(path):
     """
@@ -74,10 +74,7 @@ def render_camera_extrinsic_params(path):
 
     for index, (scale_mat, world_mat) in tqdm(enumerate(zip(scale_mats_np, world_mats_np))):
         intrinsics_, pose_ = load_K_Rt_from_P(None, world_mat[:3, :4])
-        if index == 0:
-            print(pose_)
-            print(intrinsics_)
-            print(world_mat)
+        print(pose_)
         P = world_mat @ scale_mat
         P = P[:3, :4]
         intrinsics, pose = load_K_Rt_from_P(None, P)
