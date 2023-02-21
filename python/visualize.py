@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import open3d as o3d
 import numpy as np
 from tqdm import tqdm
-from python.NeuS_texture.utils import CameraPoseVisualizer, load_K_Rt_from_P
+from NeuS_texture.utils import CameraPoseVisualizer, load_K_Rt_from_P
 
 def render_point_cloud(path):
     """
@@ -28,6 +28,7 @@ def render_point_cloud(path):
 def render_mesh(path):
     """
     渲染网格
+
     :param path: 输入文件路径（.ply/.off） # e.g. ply_path = 'data/demo/Matterport3D_processed/17DRP5sb8fy/pointcloud.ply'
     :return:
     """
@@ -39,9 +40,20 @@ def render_mesh(path):
     print(np.asarray(mesh.triangle_normals))
     o3d.visualization.draw_geometries([mesh])
 
+def load_npy(path):
+    loadData = np.load(path)
+
+    print("----type----")
+    print(type(loadData))
+    print("----shape----")
+    print(loadData.shape)
+    print("----data----")
+    print(loadData)
+
 def load_npz(path):
     """
     打印在npz格式的数据中存在的所有类dict属性
+
     :param path: # e.g. npz_path = 'data/demo/Matterport3D_processed/17DRP5sb8fy/pointcloud.npz'
     :return:
     """
@@ -126,6 +138,5 @@ def lr():
     plt.savefig('x.png')
 
 if (__name__=="__main__"):
-    npz_path = "NeuS_texture/BlendedMVS_preprocessed/5a7d3db14989e929563eb153/preprocessed/cameras_sphere.npz"
-    # npz_path = "haibao/preprocessed/cameras_sphere.npz"
-    render_camera_extrinsic_params(npz_path)
+    npy_path = 'poses.npy'
+    load_npy(npy_path)

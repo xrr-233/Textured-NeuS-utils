@@ -7,6 +7,7 @@ public class NewBehaviourScript : MonoBehaviour
 {
     public string file;
     public bool hasMeta;
+    public bool hasColor;
 
     // Start is called before the first frame update
     void Start()
@@ -43,6 +44,13 @@ public class NewBehaviourScript : MonoBehaviour
                 GameObject point = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 point.transform.position = new Vector3(float.Parse(pointCoord[0]), float.Parse(pointCoord[1]), float.Parse(pointCoord[2]));
                 point.transform.localScale = scale;
+                if (hasColor)
+                {
+                    Color color = new Color(float.Parse(pointCoord[3]), float.Parse(pointCoord[4]), float.Parse(pointCoord[5]));
+                    Material[] materials = point.transform.GetComponent<MeshRenderer>().materials;
+                    materials[0].color = color;
+                    point.transform.GetComponent<MeshRenderer>().materials = materials;
+                }
             }
         }
 

@@ -328,8 +328,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 270f590c138fde5478f7860aaae12ac0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  file: points
-  hasMeta: 1
+  file: points2
+  hasMeta: 0
+  hasColor: 0
 --- !u!4 &2045470044
 Transform:
   m_ObjectHideFlags: 0
