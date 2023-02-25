@@ -10,12 +10,65 @@ from PIL import Image
 from tqdm import tqdm
 from skimage.metrics import peak_signal_noise_ratio as psnr
 from skimage.metrics import structural_similarity as ssim
+
 from runner import Runner
+from utils import load_K_Rt_from_P
 
 
 class Dataset:
     def __init__(self):
         pass
+
+    def generate_baseline_rendered_mesh(self, mesh_show_back_face=True, save_path='.'):
+        trajectory = []
+        for i in range(self.n_images):
+            pinhole_parameters = o3d.camera.PinholeCameraParameters()
+            pinhole_intrinsic = o3d.camera.PinholeCameraIntrinsic()
+            pinhole_intrinsic.intrinsic_matrix = self.camera_intrinsics[i]
+            pinhole_parameters.intrinsic = pinhole_intrinsic
+            pinhole_parameters.extrinsic = self.camera_extrinsics[i]
+            trajectory.append(pinhole_parameters)
+        pinhole_trajectory = o3d.camera.PinholeCameraTrajectory()
+        pinhole_trajectory.parameters = trajectory
+
+        custom_draw_geometry_with_camera_trajectory = {
+            'index': -1,
+            'trajectory': pinhole_trajectory,
+            'vis': o3d.visualization.Visualizer()
+        }
+
+        def move_forward(vis):
+            # This function is called within the o3d.visualization.Visualizer::run() loop
+            # The run loop calls the function, then re-render
+            # So the sequence in this function is to:
+            # 1. Capture frame
+            # 2. index++, check ending criteria
+            # 3. Set camera
+            # 4. (Re-render)
+            ctr = vis.get_view_control()
+            glb = custom_draw_geometry_with_camera_trajectory
+            if glb['index'] >= 0:
+                print(os.path.join(save_path, 'image_mesh', '{:0>3d}.png'.format(glb['index'])))
+                vis.capture_screen_image(os.path.join(save_path, 'image_mesh', '{:0>3d}.png'.format(glb['index'])),
+                                         False)
+            glb['index'] = glb['index'] + 1
+            if glb['index'] < len(glb['trajectory'].parameters):
+                ctr.convert_from_pinhole_camera_parameters(
+                    glb['trajectory'].parameters[glb['index']], allow_arbitrary=True)
+            else:
+                custom_draw_geometry_with_camera_trajectory['vis']. \
+                    register_animation_callback(None)
+            return False
+
+        vis = custom_draw_geometry_with_camera_trajectory['vis']
+        print(self.W, self.H)
+        vis.create_window(width=self.W, height=self.H)
+        for mesh in self.meshes:
+            vis.add_geometry(mesh)
+        vis.get_render_option().mesh_show_back_face = mesh_show_back_face
+        vis.register_animation_callback(move_forward)
+        vis.run()
+        vis.destroy_window()
 
 
 class BlendedMVSDataset(Dataset):
@@ -62,10 +115,7 @@ class BlendedMVSDataset(Dataset):
             if f.endswith('.obj'):
                 mesh = o3d.io.read_triangle_mesh(os.path.join(textured_mesh_path, f), True)
                 mesh.compute_vertex_normals()  # allow light effect
-                self.meshes.append({
-                    'name': f[:-4],
-                    'geometry': mesh,
-                })
+                self.meshes.append(mesh)
 
         filename_root = os.path.join(filename_root, filename, filename, filename)
         self.camera_images = os.listdir(os.path.join(filename_root, 'blended_images'))
@@ -73,58 +123,6 @@ class BlendedMVSDataset(Dataset):
         sample_img = Image.open(os.path.join(filename_root, 'blended_images', self.camera_images[0]))
         self.W = sample_img.width
         self.H = sample_img.height
-
-    def generate_baseline_rendered_mesh(self, mesh_show_back_face=True, save_path='.'):
-        trajectory = []
-        for i in range(self.n_images):
-            pinhole_parameters = o3d.camera.PinholeCameraParameters()
-            pinhole_intrinsic = o3d.camera.PinholeCameraIntrinsic()
-            pinhole_intrinsic.intrinsic_matrix = self.camera_intrinsics[i]
-            pinhole_parameters.intrinsic = pinhole_intrinsic
-            pinhole_parameters.extrinsic = self.camera_extrinsics[i]
-            trajectory.append(pinhole_parameters)
-        pinhole_trajectory = o3d.camera.PinholeCameraTrajectory()
-        pinhole_trajectory.parameters = trajectory
-
-        custom_draw_geometry_with_camera_trajectory = {
-            'index': -1,
-            'trajectory': pinhole_trajectory,
-            'vis': o3d.visualization.Visualizer()
-        }
-
-        def move_forward(vis):
-            # This function is called within the o3d.visualization.Visualizer::run() loop
-            # The run loop calls the function, then re-render
-            # So the sequence in this function is to:
-            # 1. Capture frame
-            # 2. index++, check ending criteria
-            # 3. Set camera
-            # 4. (Re-render)
-            ctr = vis.get_view_control()
-            glb = custom_draw_geometry_with_camera_trajectory
-            os.makedirs('image', exist_ok=True)
-            if glb['index'] >= 0:
-                print(os.path.join(save_path, 'image_mesh', '{:0>3d}.png'.format(glb['index'])))
-                vis.capture_screen_image(os.path.join(save_path, 'image_mesh', '{:0>3d}.png'.format(glb['index'])),
-                                         False)
-            glb['index'] = glb['index'] + 1
-            if glb['index'] < len(glb['trajectory'].parameters):
-                ctr.convert_from_pinhole_camera_parameters(
-                    glb['trajectory'].parameters[glb['index']], allow_arbitrary=True)
-            else:
-                custom_draw_geometry_with_camera_trajectory['vis']. \
-                    register_animation_callback(None)
-            return False
-
-        vis = custom_draw_geometry_with_camera_trajectory['vis']
-        print(self.W, self.H)
-        vis.create_window(width=self.W, height=self.H)
-        for mesh in self.meshes:
-            vis.add_geometry(mesh['geometry'])
-        vis.get_render_option().mesh_show_back_face = mesh_show_back_face
-        vis.register_animation_callback(move_forward)
-        vis.run()
-        vis.destroy_window()
 
     def preprocess_dataset(self):
         os.makedirs('BlendedMVS_preprocessed', exist_ok=True)
@@ -240,9 +238,9 @@ class DTUOrSelfDataset(Dataset):
         if os.path.exists(os.path.join(self.path_root, 'mask')) and rewrite:
             shutil.rmtree(os.path.join(self.path_root, 'mask'))
         if os.path.exists(os.path.join(self.path_root, 'cameras_sphere.npz')) and rewrite:
-            shutil.rmtree(os.path.join(self.path_root, 'cameras_sphere.npz'))
+            os.remove(os.path.join(self.path_root, 'cameras_sphere.npz'))
         if os.path.exists(os.path.join(self.path_root, 'textured_mesh.ply')) and rewrite:
-            shutil.rmtree(os.path.join(self.path_root, 'textured_mesh.ply'))
+            os.remove(os.path.join(self.path_root, 'textured_mesh.ply'))
 
         if not os.path.exists(os.path.join(self.path_root, 'image')):
             shutil.copytree(os.path.join(self.path_public, 'image'),
@@ -263,11 +261,25 @@ class DTUOrSelfDataset(Dataset):
         self.W = sample_img.width
         self.H = sample_img.height
 
+        camera_dict = np.load(os.path.join(self.path_root, 'cameras_sphere.npz'))
+        world_mats_np = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]
+        scale_mats_np = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]
+        self.camera_intrinsics = []
+        self.camera_extrinsics = []
+        for scale_mat, world_mat in zip(scale_mats_np, world_mats_np):
+            P = world_mat @ scale_mat
+            P = P[:3, :4]
+            intrinsics, pose = load_K_Rt_from_P(None, P)
+            self.camera_intrinsics.append(intrinsics[:3, :3])
+            self.camera_extrinsics.append(pose)
+        self.meshes = [o3d.io.read_triangle_mesh(os.path.join(self.path_root, 'textured_mesh.ply'), True)]
+
 
 class TexturedNeUSDataset(Dataset):
-    def __init__(self, path_exp):
+    def __init__(self, path_baseline, path_exp):
         super().__init__()
         self.path_root = 'TexturedNeUSDataset_processed'
+        self.path_baseline = path_baseline
         self.path_exp = path_exp
 
     def process_dataset(self, counterpart, rewrite=False):
@@ -276,10 +288,12 @@ class TexturedNeUSDataset(Dataset):
 
         if os.path.exists(os.path.join(self.path_root, 'image')) and rewrite:
             shutil.rmtree(os.path.join(self.path_root, 'image'))
+        if os.path.exists(os.path.join(self.path_root, 'cameras_sphere.npz')) and rewrite:
+            os.remove(os.path.join(self.path_root, 'cameras_sphere.npz'))
         if os.path.exists(os.path.join(self.path_root, 'textured_mesh.ply')) and rewrite:
-            shutil.rmtree(os.path.join(self.path_root, 'textured_mesh.ply'))
+            os.remove(os.path.join(self.path_root, 'textured_mesh.ply'))
         if os.path.exists(os.path.join(self.path_root, 'ckpt.pth')) and rewrite:
-            shutil.rmtree(os.path.join(self.path_root, 'ckpt.pth'))
+            os.remove(os.path.join(self.path_root, 'ckpt.pth'))
 
         if not os.path.exists(os.path.join(self.path_root, 'ckpt.pth')):
             model_list_raw = os.listdir(os.path.join(self.path_exp, 'womask_sphere', 'checkpoints'))
@@ -291,15 +305,37 @@ class TexturedNeUSDataset(Dataset):
             latest_model_name = model_list[-1]
             shutil.copy(os.path.join(self.path_exp, 'womask_sphere', 'checkpoints', latest_model_name),
                         os.path.join(self.path_root, 'ckpt.pth'))
+        if not os.path.exists(os.path.join(self.path_root, 'cameras_sphere.npz')):
+            shutil.copy(os.path.join(self.path_baseline, 'cameras_sphere.npz'),
+                        os.path.join(self.path_root, 'cameras_sphere.npz'))
         if not os.path.exists(os.path.join(self.path_root, 'image')):
             os.makedirs(os.path.join(self.path_root, 'image'), exist_ok=True)
             self.runner = Runner('', counterpart.n_images, counterpart.W, counterpart.H)
-            self.runner.load_camera_params(os.path.join(counterpart.path_root, 'cameras_sphere.npz'))
+            self.runner.load_camera_params(os.path.join(self.path_root, 'cameras_sphere.npz'))
             self.runner.load_ckpt(os.path.join(self.path_root, 'ckpt.pth'))
-            self.runner.validate_image()
+            self.runner.validate_image(save_path=self.path_root)
         if not os.path.exists(os.path.join(self.path_root, 'textured_mesh.ply')):
             shutil.copy(os.path.join(self.path_exp, 'womask_sphere', 'meshes', 'vertex_color.ply'),
                         os.path.join(self.path_root, 'textured_mesh.ply'))
+
+        self.camera_images = os.listdir(os.path.join(self.path_root, 'image'))
+        self.n_images = len(self.camera_images)
+        sample_img = Image.open(os.path.join(self.path_root, 'image', self.camera_images[0]))
+        self.W = sample_img.width
+        self.H = sample_img.height
+
+        camera_dict = np.load(os.path.join(self.path_root, 'cameras_sphere.npz'))
+        world_mats_np = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]
+        scale_mats_np = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]
+        self.camera_intrinsics = []
+        self.camera_extrinsics = []
+        for scale_mat, world_mat in zip(scale_mats_np, world_mats_np):
+            P = world_mat @ scale_mat
+            P = P[:3, :4]
+            intrinsics, pose = load_K_Rt_from_P(None, P)
+            self.camera_intrinsics.append(intrinsics[:3, :3])
+            self.camera_extrinsics.append(pose)
+        self.meshes = [o3d.io.read_triangle_mesh(os.path.join(self.path_root, 'textured_mesh.ply'), True)]
 
 
 class Metrics:
@@ -325,6 +361,7 @@ class Metrics:
 
     def PSNR(self, target, idx=-1):
         """
+        30db以上为佳
 
         :param target: 'image' or 'image_mesh'
         :param idx: if -1, take average
@@ -356,10 +393,9 @@ class Metrics:
         all_psnr = np.asarray(all_psnr)
         return all_psnr
 
-    # https://github.com/jsh-me/psnr-ssim-tool
-
     def SSIM(self, target, idx=-1):
         """
+        (0, 1)越大越好
 
         :param target: 'image' or 'image_mesh'
         :param idx: if -1, take average
@@ -390,6 +426,7 @@ class Metrics:
 
     def LPIPS(self, target, idx=-1):
         """
+        (0, 1)越小越好
 
         :param target: 'image' or 'image_mesh'
         :param idx: if -1, take average
@@ -431,13 +468,18 @@ if __name__ == '__main__':
         'D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/exp/haibao/preprocessed'
     )
     baseline_dataset.preprocess_dataset()
-    processed_dataset = TexturedNeUSDataset('D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/exp/haibao/preprocessed')
-    processed_dataset.process_dataset(baseline_dataset)
+    # baseline_dataset.generate_baseline_rendered_mesh(save_path=baseline_dataset.path_root)
+    processed_dataset = TexturedNeUSDataset(
+        baseline_dataset.path_root,
+        'D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/exp/haibao/preprocessed'
+    )
+    processed_dataset.process_dataset(baseline_dataset, rewrite=True)
+    # processed_dataset.generate_baseline_rendered_mesh(save_path=processed_dataset.path_root)
 
-    metrics = Metrics(baseline_dataset.path_root, processed_dataset.path_root)
-    all_psnr = metrics.PSNR('image')  # 30db以上为佳
-    print(all_psnr)
-    all_ssim = metrics.SSIM('image')  # (0, 1)越大越好
-    print(all_ssim)
-    all_lpips = metrics.LPIPS('image')  # (0, 1)越小越好
-    print(all_lpips)
+    # metrics = Metrics(baseline_dataset.path_root, processed_dataset.path_root)
+    # all_psnr = metrics.PSNR('image')`
+    # print(all_psnr)
+    # all_ssim = metrics.SSIM('image')
+    # print(all_ssim)
+    # all_lpips = metrics.LPIPS('image')
+    # print(all_lpips)
