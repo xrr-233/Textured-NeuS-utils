@@ -75,6 +75,16 @@ def load_K_Rt_from_P(filename, P=None):
 
     return intrinsics, pose
 
+def resize(path):
+    os.makedirs('temp', exist_ok=True)
+    all_imgs = os.listdir(path)
+    for img in all_imgs:
+        im = cv2.imread(os.path.join(path, img))
+        im = cv2.resize(im, (0, 0), fx=0.5, fy=0.5)
+        cv2.imwrite(os.path.join('temp', img), im)
+
+resize('old/data/imgs_original')
+
 # def integrate_imgs():
 #     imgs_path = 'NeuS_texture/data/imgs_original'
 #     masks_path = './NeuS_texture/data/masks'

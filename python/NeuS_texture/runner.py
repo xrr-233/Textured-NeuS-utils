@@ -1,7 +1,7 @@
+# import pyrender
 import math
 import os
 import logging
-import pyrender
 import torch
 import numpy as np
 import trimesh
@@ -11,6 +11,7 @@ from pyhocon import ConfigFactory
 from glob import glob
 from tqdm import tqdm
 from models.fields import NeRF, SDFNetwork, SingleVarianceNetwork, RenderingNetwork
+from models.renderer import NeuSRenderer
 
 
 def load_K_Rt_from_P(filename, P=None):
@@ -87,15 +88,19 @@ def euler2RM(theta):
     R = np.dot(R_z, np.dot(R_y, R_x))
     # print(f"Rotate matrix:\n{R}")
     return R
+
+
 # https://blog.csdn.net/weixin_41010198/article/details/115960331
 
 
 class Runner:
-    def __init__(self, case_name):
+    def __init__(self, case_name, n_images, W, H, conf_path='womask.conf'):
+        torch.set_default_tensor_type('torch.cuda.FloatTensor')
         self.device = torch.device('cuda')
+        torch.cuda.set_device(0)
 
         # Configuration
-        self.conf_path = 'data/womask.conf'
+        self.conf_path = conf_path
         f = open(self.conf_path)
         conf_text = f.read()
         conf_text = conf_text.replace('CASE_NAME', case_name)
@@ -116,65 +121,63 @@ class Runner:
         params_to_train += list(self.deviation_network.parameters())
         params_to_train += list(self.color_network.parameters())
         self.optimizer = torch.optim.Adam(params_to_train, lr=self.learning_rate)
+        self.renderer = NeuSRenderer(self.nerf_outside,
+                                     self.sdf_network,
+                                     self.deviation_network,
+                                     self.color_network,
+                                     **self.conf['model.neus_renderer'])
 
-    def load_camera_params(self):
-        camera_dict = np.load('data/cameras_sphere.npz')
-        n_images = len(os.listdir('data/imgs'))
+        self.n_images = n_images
+        self.W = W
+        self.H = H
+
+    def load_camera_params(self, path):
+        """
+
+        :param path: npz file
+        :return:
+        """
+        camera_dict = np.load(path)
 
         # world_mat is a projection matrix from world to image
-        self.world_mats_np = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(n_images)]
+        self.world_mats_np = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]
         # scale_mat: used for coordinate normalization, we assume the scene to render is inside a unit sphere at origin.
-        self.scale_mats_np = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(n_images)]
+        self.scale_mats_np = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]
         self.intrinsics_all = []
         self.pose_all = []
         for scale_mat, world_mat in zip(self.scale_mats_np, self.world_mats_np):
             P = world_mat @ scale_mat
             P = P[:3, :4]
             intrinsics, pose = load_K_Rt_from_P(None, P)
-            self.intrinsics_all.append(intrinsics)
-            self.pose_all.append(pose)
-        self.intrinsics_all = np.stack(self.intrinsics_all)  # [n_images, 4, 4]
-        self.intrinsics_all_inv = np.linalg.inv(self.intrinsics_all)  # [n_images, 4, 4]
+            self.intrinsics_all.append(torch.from_numpy(intrinsics).float())
+            self.pose_all.append(torch.from_numpy(pose).float())
+        self.intrinsics_all = torch.stack(self.intrinsics_all).to(self.device)  # [n_images, 4, 4]
+        self.intrinsics_all_inv = torch.inverse(self.intrinsics_all)  # [n_images, 4, 4]
         self.focal = self.intrinsics_all[0][0, 0]
-        self.pose_all = np.stack(self.pose_all)  # [n_images, 4, 4]
+        self.pose_all = torch.stack(self.pose_all).to(self.device)  # [n_images, 4, 4]
 
-        images_lis = sorted(glob(os.path.join('data/imgs', '*.png')))
-        images_np = np.stack([cv.imread(im_name) for im_name in tqdm(images_lis)]) / 256.0
-        self.images = images_np.astype(np.float32)  # [n_images, H, W, 3]
-        masks_lis = sorted(glob(os.path.join('data/masks', '*.png')))
-        masks_np = np.stack([cv.imread(im_name) for im_name in tqdm(masks_lis)]) / 256.0
-        self.masks = masks_np.astype(np.float32)  # [n_images, H, W, 3]
-        self.H, self.W = self.images.shape[1], self.images.shape[2]
+        # images_lis = sorted(glob(os.path.join('old/data/imgs', '*.png')))
+        # images_np = np.stack([cv.imread(im_name) for im_name in tqdm(images_lis)]) / 256.0
+        # self.images = images_np.astype(np.float32)  # [n_images, H, W, 3]
+        # masks_lis = sorted(glob(os.path.join('old/data/masks', '*.png')))
+        # masks_np = np.stack([cv.imread(im_name) for im_name in tqdm(masks_lis)]) / 256.0
+        # self.masks = masks_np.astype(np.float32)  # [n_images, H, W, 3]
+        # self.H, self.W = self.images.shape[1], self.images.shape[2]
 
-    def load_ckpt(self):
-        latest_model_name = None
-        model_list_raw = os.listdir('data/ckpts')
-        model_list = []
-        for model_name in model_list_raw:
-            if model_name[-3:] == 'pth' and int(model_name[5:-4]) <= 999999:
-                model_list.append(model_name)
-        model_list.sort()
+    def load_ckpt(self, path):
+        print(f'Find checkpoint: {path}')
 
-        if (len(model_list) > 0):
-            latest_model_name = model_list[-1]
-
-        if latest_model_name is not None:
-            print(f'Find checkpoint: {latest_model_name}')
-
-            checkpoint = torch.load(os.path.join('data/ckpts', latest_model_name), map_location=self.device)
-            self.nerf_outside.load_state_dict(checkpoint['nerf'])
-            self.sdf_network.load_state_dict(checkpoint['sdf_network_fine'])
-            self.deviation_network.load_state_dict(checkpoint['variance_network_fine'])
-            self.color_network.load_state_dict(checkpoint['color_network_fine'])
-            self.optimizer.load_state_dict(checkpoint['optimizer'])
-            self.iter_step = checkpoint['iter_step']
-        else:
-            logging.error('No checkpoint found')
-            exit(-1)
+        checkpoint = torch.load(path, map_location=self.device)
+        self.nerf_outside.load_state_dict(checkpoint['nerf'])
+        self.sdf_network.load_state_dict(checkpoint['sdf_network_fine'])
+        self.deviation_network.load_state_dict(checkpoint['variance_network_fine'])
+        self.color_network.load_state_dict(checkpoint['color_network_fine'])
+        self.optimizer.load_state_dict(checkpoint['optimizer'])
+        self.iter_step = checkpoint['iter_step']
 
     def load_mesh(self):
         latest_model_name = None
-        model_list_raw = os.listdir('data/meshes')
+        model_list_raw = os.listdir('old/data/meshes')
         model_list = []
         for model_name in model_list_raw:
             if model_name[-3:] == 'ply' and int(model_name[:-4]) <= 99999999:
@@ -187,7 +190,7 @@ class Runner:
         if latest_model_name is not None:
             print(f'Find 3d model: {latest_model_name}')
 
-            self.mesh = trimesh.load(os.path.join('data/meshes', latest_model_name))
+            self.mesh = trimesh.load(os.path.join('old/data/meshes', latest_model_name))
             self.mesh.vertices = (self.mesh.vertices - self.scale_mats_np[0][:3, 3][None]) / self.scale_mats_np[0][0, 0]
             self.mesh.invert()
 
@@ -196,53 +199,158 @@ class Runner:
             logging.error('No 3d model found')
             exit(-1)
 
+    def gen_rays_at(self, img_idx, resolution_level=1):
+        """
+        Generate rays at world space from one camera.
+        """
+        l = resolution_level
+        tx = torch.linspace(0, self.W - 1, self.W // l)
+        ty = torch.linspace(0, self.H - 1, self.H // l)
+        pixels_x, pixels_y = torch.meshgrid(tx, ty)
+        p = torch.stack([pixels_x, pixels_y, torch.ones_like(pixels_y)], dim=-1).to(self.device)  # W, H, 3
+        p = torch.matmul(self.intrinsics_all_inv[img_idx, None, None, :3, :3],
+                         p[:, :, :, None]).squeeze()  # 与内参矩阵相乘，W, H, 3
+        rays_v = p / torch.linalg.norm(p, ord=2, dim=-1, keepdim=True)  # 求L2范式，W, H, 3
+        rays_v = torch.matmul(self.pose_all[img_idx, None, None, :3, :3], rays_v[:, :, :, None]).squeeze()  # W, H, 3
+        rays_o = self.pose_all[img_idx, None, None, :3, 3].expand(rays_v.shape)  # W, H, 3
+        return rays_o.transpose(0, 1), rays_v.transpose(0, 1)
 
-if (__name__ == "__main__"):
-    # logging.basicConfig(level=logging.DEBUG)
+    def near_far_from_sphere(self, rays_o, rays_d):  # https://github.com/Totoro97/NeuS/issues/11
+        a = torch.sum(rays_d ** 2, dim=-1, keepdim=True)
+        b = 2.0 * torch.sum(rays_o * rays_d, dim=-1, keepdim=True)
+        mid = 0.5 * (-b) / a
+        near = mid - 1.0
+        far = mid + 1.0
+        return near, far
 
-    runner = Runner('haibao')
-    runner.load_camera_params()
-    runner.load_mesh()
-    # print(np.min(runner.mesh.vertices, axis=0))
-    # print(np.max(runner.mesh.vertices, axis=0))
+    def validate_image(self, idx=-1, resolution_level=1):
+        idxs = []
+        if idx == -1:
+            for idx in range(self.n_images):
+                idxs.append(idx)
+        else:
+            idxs.append(idx)
 
-    mesh = pyrender.Mesh.from_trimesh(runner.mesh, smooth=False)
-    scene = pyrender.Scene(ambient_light=[0, 0, 0], bg_color=[0, 0, 0])
-    camera = pyrender.PerspectiveCamera(yfov=np.pi / 3.0)
-    light = pyrender.DirectionalLight(color=[1, 1, 1], intensity=2e3)
+        for idx in idxs:
+            print(f'Validate camera: {idx}')
 
-    id = 0
-    scene.add(mesh, pose=np.eye(4))
-    light_pose = np.copy(runner.pose_all[id])
-    camera_pose = np.copy(runner.pose_all[id])
-    light_node = scene.add(light)
-    scene.set_pose(light_node, pose=light_pose)
-    camera_pose[:3, :3] *= -1
-    camera_node = scene.add(camera)
-    scene.set_pose(camera_node, pose=camera_pose)
+            rays_o, rays_d = self.gen_rays_at(idx, resolution_level=resolution_level)
+            H, W, _ = rays_o.shape
+            rays_o = rays_o.reshape(-1, 3).split(self.conf['train.batch_size'])
+            rays_d = rays_d.reshape(-1, 3).split(self.conf['train.batch_size'])
+            print(H, W)
 
-    # render scene
-    r = pyrender.OffscreenRenderer(runner.W, runner.H)
-    color, _ = r.render(scene)
+            out_rgb_fine = []
+            out_normal_fine = []
 
-    plt.figure(figsize=(8, 8))
-    plt.imshow(color)
-    plt.show()
+            for idx in tqdm(range(len(rays_o))):
+                rays_o_batch = rays_o[idx]
+                rays_d_batch = rays_d[idx]
 
-    start = np.array([0, 0, 0])
-    end = RM2EulerDeg(light_pose)
-    os.makedirs('data/renderings', exist_ok=True)
-    for i in tqdm(range(30)):
-        light_pose = np.copy(runner.pose_all[i])
-        camera_pose = np.copy(runner.pose_all[i])
-        scene.set_pose(light_node, pose=light_pose)
-        camera_pose[:3, :3] *= -1
-        scene.set_pose(camera_node, pose=camera_pose)
+                near, far = self.near_far_from_sphere(rays_o_batch, rays_d_batch)
+                background_rgb = torch.ones([1, 3]) if self.conf['train.use_white_bkgd'] else None
 
-        # render scene
-        r = pyrender.OffscreenRenderer(runner.W, runner.H)
-        color, _ = r.render(scene)
+                render_out = self.renderer.render(rays_o_batch,
+                                                  rays_d_batch,
+                                                  near,
+                                                  far,
+                                                  cos_anneal_ratio=self.get_cos_anneal_ratio(),
+                                                  background_rgb=background_rgb)
 
-        plt.figure(figsize=(8, 8))
-        plt.imshow(color)
-        plt.savefig(os.path.join('data/renderings', '%03d.png' % i))
+        #     def feasible(key):
+        #         return (key in render_out) and (render_out[key] is not None)
+        #
+        #     if feasible('color_fine'):
+        #         out_rgb_fine.append(render_out['color_fine'].detach().cpu().numpy())
+        #     if feasible('gradients') and feasible('weights'):
+        #         n_samples = self.renderer.n_samples + self.renderer.n_importance
+        #         normals = render_out['gradients'] * render_out['weights'][:, :n_samples, None]
+        #         if feasible('inside_sphere'):
+        #             normals = normals * render_out['inside_sphere'][..., None]
+        #         normals = normals.sum(dim=1).detach().cpu().numpy()
+        #         out_normal_fine.append(normals)
+        #     del render_out
+        #
+        # img_fine = None
+        # if len(out_rgb_fine) > 0:
+        #     img_fine = (np.concatenate(out_rgb_fine, axis=0).reshape([H, W, 3, -1]) * 256).clip(0, 255)
+        #
+        # normal_img = None
+        # if len(out_normal_fine) > 0:
+        #     normal_img = np.concatenate(out_normal_fine, axis=0)
+        #     rot = np.linalg.inv(self.dataset.pose_all[idx, :3, :3].detach().cpu().numpy())
+        #     normal_img = (np.matmul(rot[None, :, :], normal_img[:, :, None])
+        #                   .reshape([H, W, 3, -1]) * 128 + 128).clip(0, 255)
+        #
+        # os.makedirs(os.path.join(self.base_exp_dir, 'validations_fine'), exist_ok=True)
+        # os.makedirs(os.path.join(self.base_exp_dir, 'normals'), exist_ok=True)
+        #
+        # for i in range(img_fine.shape[-1]):
+        #     if len(out_rgb_fine) > 0:
+        #         cv.imwrite(os.path.join(self.base_exp_dir,
+        #                                 'validations_fine',
+        #                                 '{:0>8d}_{}_{}.png'.format(self.iter_step, i, idx)),
+        #                    np.concatenate([img_fine[..., i],
+        #                                    self.dataset.image_at(idx, resolution_level=resolution_level)]))
+        #     if len(out_normal_fine) > 0:
+        #         cv.imwrite(os.path.join(self.base_exp_dir,
+        #                                 'normals',
+        #                                 '{:0>8d}_{}_{}.png'.format(self.iter_step, i, idx)),
+        #                    normal_img[..., i])
+
+    def get_cos_anneal_ratio(self):
+        if self.conf['train.anneal_end'] == 0.0:
+            return 1.0
+        else:
+            return np.min([1.0, self.iter_step / self.conf['train.anneal_end']])
+
+
+# if (__name__ == "__main__"):
+#     # logging.basicConfig(level=logging.DEBUG)
+#
+#     runner = Runner('haibao')
+#     runner.load_camera_params()
+#     runner.load_mesh()
+#     # print(np.min(runner.mesh.vertices, axis=0))
+#     # print(np.max(runner.mesh.vertices, axis=0))
+#
+#     mesh = pyrender.Mesh.from_trimesh(runner.mesh, smooth=False)
+#     scene = pyrender.Scene(ambient_light=[0, 0, 0], bg_color=[0, 0, 0])
+#     camera = pyrender.PerspectiveCamera(yfov=np.pi / 3.0)
+#     light = pyrender.DirectionalLight(color=[1, 1, 1], intensity=2e3)
+#
+#     id = 0
+#     scene.add(mesh, pose=np.eye(4))
+#     light_pose = np.copy(runner.pose_all[id])
+#     camera_pose = np.copy(runner.pose_all[id])
+#     light_node = scene.add(light)
+#     scene.set_pose(light_node, pose=light_pose)
+#     camera_pose[:3, :3] *= -1
+#     camera_node = scene.add(camera)
+#     scene.set_pose(camera_node, pose=camera_pose)
+#
+#     # render scene
+#     r = pyrender.OffscreenRenderer(runner.W, runner.H)
+#     color, _ = r.render(scene)
+#
+#     plt.figure(figsize=(8, 8))
+#     plt.imshow(color)
+#     plt.show()
+#
+#     start = np.array([0, 0, 0])
+#     end = RM2EulerDeg(light_pose)
+#     os.makedirs('old/data/renderings', exist_ok=True)
+#     for i in tqdm(range(30)):
+#         light_pose = np.copy(runner.pose_all[i])
+#         camera_pose = np.copy(runner.pose_all[i])
+#         scene.set_pose(light_node, pose=light_pose)
+#         camera_pose[:3, :3] *= -1
+#         scene.set_pose(camera_node, pose=camera_pose)
+#
+#         # render scene
+#         r = pyrender.OffscreenRenderer(runner.W, runner.H)
+#         color, _ = r.render(scene)
+#
+#         plt.figure(figsize=(8, 8))
+#         plt.imshow(color)
+#         plt.savefig(os.path.join('old/data/renderings', '%03d.png' % i))
