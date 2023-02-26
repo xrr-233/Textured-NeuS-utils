@@ -81,25 +81,41 @@ class BlendedMVSDataset(Dataset):
                 self.image_dirs.append(os.path.join(path_root, filename))
         self.textured_mesh_dir = os.path.join(path_root, 'dataset_textured_meshes')
 
+        all_models_root = []
         all_models = []
         self.all_models_root = []
         self.all_models = []
         for image_dir in self.image_dirs:
             all_model = os.listdir(image_dir)
-            self.all_models_root.extend(image_dir for _ in range(len(all_model)))
+            all_models_root.extend(image_dir for _ in range(len(all_model)))
             all_models.extend(all_model)
         for filename in os.listdir(self.textured_mesh_dir):
             if filename in all_models:
+                self.all_models_root.append(all_models_root[all_models.index(filename)])
                 self.all_models.append(filename)
 
     def __len__(self):
         return len(self.all_models)
 
-    def load_single_model(self, identifier, is_filename=False):
+    def get_single_model_path_root(self, identifier):
+        if type(identifier) == str:
+            if os.path.exists(os.path.join(self.path_root, identifier)):
+                return os.path.join(self.path_root, identifier)
+            else:
+                print('model not found!')
+                exit(-1)
+        else:
+            if identifier < self.__len__():
+                return os.path.join(self.path_root, self.all_models[identifier])
+            else:
+                print('idx exceeds max model number!')
+                exit(-1)
+
+    def load_single_model(self, identifier):
         # device = o3d.core.Device("CPU:0")
         filename_root = None
         filename = None
-        if is_filename:
+        if type(identifier) == str:
             filename_root = self.all_models_root[self.all_models.index(identifier)]
             filename = identifier
         else:
@@ -109,8 +125,8 @@ class BlendedMVSDataset(Dataset):
             else:
                 print('idx exceeds max model number!')
                 exit(-1)
-        textured_mesh_path = os.path.join(self.textured_mesh_dir, filename, 'textured_mesh')
 
+        textured_mesh_path = os.path.join(self.textured_mesh_dir, filename, 'textured_mesh')
         self.meshes = []
         for f in os.listdir(textured_mesh_path):
             if f.endswith('.obj'):
@@ -125,7 +141,7 @@ class BlendedMVSDataset(Dataset):
         self.W = sample_img.width
         self.H = sample_img.height
 
-    def export_bundler_out(self, src_root, dst_root):
+    def export_bundler_out(self, dst_root):
         with open(os.path.join(dst_root, 'meshlab_camera.out'), 'w') as f:
             f.write('# Bundle file v0.3\n')
             f.write(f'{self.n_images} 0\n')
@@ -163,14 +179,13 @@ class BlendedMVSDataset(Dataset):
             filename_root = self.all_models_root[i]
             filename = self.all_models[i]
             os.makedirs(f'{self.path_root}/{filename}', exist_ok=True)
-            os.makedirs(f'{self.path_root}/{filename}/preprocessed', exist_ok=True)
-            os.makedirs(f'{self.path_root}/{filename}/preprocessed/image', exist_ok=True)
-            os.makedirs(f'{self.path_root}/{filename}/preprocessed/image_mesh', exist_ok=True)
-            os.makedirs(f'{self.path_root}/{filename}/preprocessed/mask', exist_ok=True)
+            os.makedirs(f'{self.path_root}/{filename}/image', exist_ok=True)
+            os.makedirs(f'{self.path_root}/{filename}/image_mesh', exist_ok=True)
+            os.makedirs(f'{self.path_root}/{filename}/mask', exist_ok=True)
 
             # region Process image
             src_root = os.path.join(filename_root, filename, filename, filename, 'blended_images')
-            dst_root = f'{self.path_root}/{filename}/preprocessed'
+            dst_root = f'{self.path_root}/{filename}'
             for index, file in enumerate(os.listdir(src_root)):
                 img = cv2.imread(os.path.join(src_root, file))
                 cv2.imwrite(os.path.join(dst_root, 'image', '{:0>3d}.png'.format(index)), img)
@@ -218,16 +233,12 @@ class BlendedMVSDataset(Dataset):
             self.n_images = len(self.camera_extrinsics)
 
             # region Generate bundler .out
-            self.export_bundler_out(src_root, dst_root)
+            self.export_bundler_out(dst_root)
             # endregion
 
             # region Process image_mesh
-            self.load_single_model(filename, is_filename=True)
-            # visualizer = CameraPoseVisualizer([-2, 2], [-2, 2], [-2, 2])
-            # for i in range(self.n_images):
-            #     visualizer.extrinsic2pyramid(self.camera_extrinsics[i], focal_len_scaled=0.25, aspect_ratio=0.3)
-            # visualizer.show()
-            # self.generate_baseline_rendered_mesh(save_path=dst_root)
+            self.load_single_model(filename)
+            self.generate_baseline_rendered_mesh(save_path=dst_root)
             # endregion
 
             # region Process scale_mat of camera_sphere.npz
@@ -514,22 +525,45 @@ class Metrics:
         return all_lpips
 
 
-if __name__ == '__main__':
-    baseline_dataset = BlendedMVSDataset('E:')
-    # baseline_dataset = BlendedMVSDataset('/media/xrr/UBUNTU 22_0')
+def get_blended_mvs_dataset_pair(usb_path, model_name):
+    """
+
+    :param usb_path: 'E:' or '/media/xrr/UBUNTU 22_0'
+    :return:
+    """
+    baseline_dataset = BlendedMVSDataset(usb_path)
     baseline_dataset.preprocess_dataset()
-    # baseline_dataset = DTUOrSelfDataset(
-    #     'D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/public_data/haibao_small/preprocessed',
-    #     'D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/exp/haibao_small/preprocessed'
-    # )
-    # baseline_dataset.preprocess_dataset()
-    # baseline_dataset.generate_baseline_rendered_mesh(save_path=baseline_dataset.path_root)
-    # processed_dataset = TexturedNeUSDataset(
-    #     baseline_dataset.path_root,
-    #     'D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/exp/haibao_small/preprocessed'
-    # )
-    # processed_dataset.process_dataset(baseline_dataset)
-    # processed_dataset.generate_baseline_rendered_mesh(save_path=processed_dataset.path_root)
+
+    processed_dataset = TexturedNeUSDataset(
+        baseline_dataset.get_single_model_path_root(model_name),
+        'D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/exp/haibao_small/preprocessed'
+    )
+    processed_dataset.process_dataset(baseline_dataset)
+    processed_dataset.generate_baseline_rendered_mesh(save_path=processed_dataset.path_root)
+
+    return baseline_dataset, processed_dataset
+
+
+def get_dtu_or_self_dataset():
+    baseline_dataset = DTUOrSelfDataset(
+        'D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/public_data/haibao_small/preprocessed',
+        'D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/exp/haibao_small/preprocessed'
+    )
+    baseline_dataset.preprocess_dataset()
+    baseline_dataset.generate_baseline_rendered_mesh(save_path=baseline_dataset.path_root)
+
+    processed_dataset = TexturedNeUSDataset(
+        baseline_dataset.path_root,
+        'D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/exp/haibao_small/preprocessed'
+    )
+    processed_dataset.process_dataset(baseline_dataset)
+    processed_dataset.generate_baseline_rendered_mesh(save_path=processed_dataset.path_root)
+
+    return baseline_dataset, processed_dataset
+    
+
+if __name__ == '__main__':
+    baseline_dataset, processed_dataset = get_blended_mvs_dataset_pair('E:', '5a7d3db14989e929563eb153')
 
     # metrics = Metrics(baseline_dataset.path_root, processed_dataset.path_root)
     # all_psnr = metrics.PSNR('image')`
