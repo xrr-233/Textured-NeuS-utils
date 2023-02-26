@@ -74,6 +74,7 @@ class Dataset:
 class BlendedMVSDataset(Dataset):
     def __init__(self, path_root):
         super().__init__()
+        self.path_root = 'BlendedMVS_preprocessed'
         self.image_dirs = []
         for filename in os.listdir(path_root):
             if filename.startswith('dataset_full_res_'):
@@ -124,26 +125,59 @@ class BlendedMVSDataset(Dataset):
         self.W = sample_img.width
         self.H = sample_img.height
 
-    def preprocess_dataset(self):
-        os.makedirs('BlendedMVS_preprocessed', exist_ok=True)
+    def export_bundler_out(self, src_root, dst_root):
+        with open(os.path.join(dst_root, 'meshlab_camera.out'), 'w') as f:
+            f.write('# Bundle file v0.3\n')
+            f.write(f'{self.n_images} 0\n')
+            for i in range(self.n_images):
+                f.write('%.6f %.6f %.6f\n' % (
+                    self.camera_intrinsics[i][0, 0],
+                    self.camera_intrinsics[i][0, 2],
+                    self.camera_intrinsics[i][1, 2]
+                ))
+                f.write('%.6f %.6f %.6f\n' % (
+                    self.camera_extrinsics[i][0, 0],
+                    self.camera_extrinsics[i][0, 1],
+                    self.camera_extrinsics[i][0, 2]
+                ))
+                f.write('%.6f %.6f %.6f\n' % (
+                    self.camera_extrinsics[i][1, 0],
+                    self.camera_extrinsics[i][1, 1],
+                    self.camera_extrinsics[i][1, 2]
+                ))
+                f.write('%.6f %.6f %.6f\n' % (
+                    self.camera_extrinsics[i][2, 0],
+                    self.camera_extrinsics[i][2, 1],
+                    self.camera_extrinsics[i][2, 2]
+                ))
+                f.write('%.6f %.6f %.6f\n' % (
+                    self.camera_extrinsics[i][0, 3],
+                    self.camera_extrinsics[i][1, 3],
+                    self.camera_extrinsics[i][2, 3]
+                ))
+
+    def preprocess_dataset(self, debug=False):
+        os.makedirs(self.path_root, exist_ok=True)
 
         for i in tqdm(range(self.__len__())):
             filename_root = self.all_models_root[i]
             filename = self.all_models[i]
-            os.makedirs(f'BlendedMVS_preprocessed/{filename}', exist_ok=True)
-            os.makedirs(f'BlendedMVS_preprocessed/{filename}/preprocessed', exist_ok=True)
-            os.makedirs(f'BlendedMVS_preprocessed/{filename}/preprocessed/image', exist_ok=True)
-            os.makedirs(f'BlendedMVS_preprocessed/{filename}/preprocessed/image_mesh', exist_ok=True)
-            os.makedirs(f'BlendedMVS_preprocessed/{filename}/preprocessed/mask', exist_ok=True)
+            os.makedirs(f'{self.path_root}/{filename}', exist_ok=True)
+            os.makedirs(f'{self.path_root}/{filename}/preprocessed', exist_ok=True)
+            os.makedirs(f'{self.path_root}/{filename}/preprocessed/image', exist_ok=True)
+            os.makedirs(f'{self.path_root}/{filename}/preprocessed/image_mesh', exist_ok=True)
+            os.makedirs(f'{self.path_root}/{filename}/preprocessed/mask', exist_ok=True)
 
+            # region Process image
             src_root = os.path.join(filename_root, filename, filename, filename, 'blended_images')
-            dst_root = f'BlendedMVS_preprocessed/{filename}/preprocessed'
-
+            dst_root = f'{self.path_root}/{filename}/preprocessed'
             for index, file in enumerate(os.listdir(src_root)):
                 img = cv2.imread(os.path.join(src_root, file))
                 cv2.imwrite(os.path.join(dst_root, 'image', '{:0>3d}.png'.format(index)), img)
                 cv2.imwrite(os.path.join(dst_root, 'mask', '{:0>3d}.png'.format(index)), np.ones_like(img) * 255)
+            # endregion
 
+            # region Process world_mat of camera_sphere.npz
             src_root = os.path.join(filename_root, filename, filename, filename, 'cams')
             cam_dict = dict()
             convert_mat = np.zeros([4, 4], dtype=np.float32)
@@ -181,13 +215,22 @@ class BlendedMVSDataset(Dataset):
                 cam_dict['camera_mat_inv_{}'.format(index)] = np.linalg.inv(intrinsic)
                 cam_dict['world_mat_{}'.format(index)] = world_mat
                 cam_dict['world_mat_inv_{}'.format(index)] = np.linalg.inv(world_mat)
+            self.n_images = len(self.camera_extrinsics)
+
+            # region Generate bundler .out
+            self.export_bundler_out(src_root, dst_root)
+            # endregion
+
+            # region Process image_mesh
             self.load_single_model(filename, is_filename=True)
             # visualizer = CameraPoseVisualizer([-2, 2], [-2, 2], [-2, 2])
             # for i in range(self.n_images):
             #     visualizer.extrinsic2pyramid(self.camera_extrinsics[i], focal_len_scaled=0.25, aspect_ratio=0.3)
             # visualizer.show()
             # self.generate_baseline_rendered_mesh(save_path=dst_root)
+            # endregion
 
+            # region Process scale_mat of camera_sphere.npz
             src_root = os.path.join(self.textured_mesh_dir, filename, 'textured_mesh')
             vertices = []
             for f in os.listdir(src_root):
@@ -202,24 +245,29 @@ class BlendedMVSDataset(Dataset):
             radius = np.linalg.norm(vertices - center, ord=2, axis=-1).max()
             scale_mat = np.diag([radius, radius, radius, 1.0]).astype(np.float32)
             scale_mat[:3, 3] = center
-
             for i in range(self.n_images):
                 cam_dict['scale_mat_{}'.format(i)] = scale_mat
                 cam_dict['scale_mat_inv_{}'.format(i)] = np.linalg.inv(scale_mat)
-
-            with open(os.path.join(dst_root, 'points2.txt'), 'w') as f:
-                for i in range(self.n_images):
-                    f.write(
-                        f'{self.camera_extrinsics[i][0, 3]} {self.camera_extrinsics[i][1, 3]} {self.camera_extrinsics[i][2, 3]}\n')
-                indices = np.linspace(0, len(vertices), 10000, dtype=int)
-                print(indices[:10])
-                for i in indices:
-                    if (i == len(vertices)):
-                        f.write(f'{vertices[i - 1][0]} {vertices[i - 1][1]} {vertices[i - 1][2]}\n')
-                    else:
-                        f.write(f'{vertices[i][0]} {vertices[i][1]} {vertices[i][2]}\n')
-
             np.savez(os.path.join(dst_root, 'cameras_sphere.npz'), **cam_dict)
+            # endregion
+
+            # region Print sampled mesh vertices as well as camera 3D position (debug=True)
+            if debug:
+                with open(os.path.join(dst_root, 'points2.txt'), 'w') as f:
+                    for i in range(self.n_images):
+                        f.write(
+                            f'{self.camera_extrinsics[i][0, 3]} {self.camera_extrinsics[i][1, 3]} {self.camera_extrinsics[i][2, 3]}\n')
+                    indices = np.linspace(0, len(vertices), 10000, dtype=int)
+                    print(indices[:10])
+                    for i in indices:
+                        if (i == len(vertices)):
+                            f.write(f'{vertices[i - 1][0]} {vertices[i - 1][1]} {vertices[i - 1][2]}\n')
+                        else:
+                            f.write(f'{vertices[i][0]} {vertices[i][1]} {vertices[i][2]}\n')
+            else:
+                if os.path.exists(os.path.join(dst_root, 'points2.txt')):
+                    os.remove(os.path.join(dst_root, 'points2.txt'))
+            # endregion
 
 
 class DTUOrSelfDataset(Dataset):
@@ -308,7 +356,7 @@ class TexturedNeUSDataset(Dataset):
         if not os.path.exists(os.path.join(self.path_root, 'cameras_sphere.npz')):
             shutil.copy(os.path.join(self.path_baseline, 'cameras_sphere.npz'),
                         os.path.join(self.path_root, 'cameras_sphere.npz'))
-        if not os.path.exists(os.path.join(self.path_root, 'image')):
+        if not os.path.exists(os.path.join(self.path_root, 'image')):  # 由于在本机渲染过于慢，请手动在高配GPU服务器上高batch训练
             os.makedirs(os.path.join(self.path_root, 'image'), exist_ok=True)
             self.runner = Runner('', counterpart.n_images, counterpart.W, counterpart.H)
             self.runner.load_camera_params(os.path.join(self.path_root, 'cameras_sphere.npz'))
@@ -327,13 +375,19 @@ class TexturedNeUSDataset(Dataset):
         camera_dict = np.load(os.path.join(self.path_root, 'cameras_sphere.npz'))
         world_mats_np = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]
         scale_mats_np = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]
+        convert_mat = np.zeros([4, 4], dtype=np.float32)
+        convert_mat[0, 0] = -1.0
+        convert_mat[1, 1] = -1.0
+        convert_mat[2, 2] = 1.0
+        convert_mat[3, 3] = 1.0
         self.camera_intrinsics = []
         self.camera_extrinsics = []
         for scale_mat, world_mat in zip(scale_mats_np, world_mats_np):
-            P = world_mat @ scale_mat
+            P = world_mat
             P = P[:3, :4]
             intrinsics, pose = load_K_Rt_from_P(None, P)
             self.camera_intrinsics.append(intrinsics[:3, :3])
+            pose = pose @ convert_mat
             self.camera_extrinsics.append(pose)
         self.meshes = [o3d.io.read_triangle_mesh(os.path.join(self.path_root, 'textured_mesh.ply'), True)]
 
@@ -461,19 +515,20 @@ class Metrics:
 
 
 if __name__ == '__main__':
-    # dataset = BlendedMVSDataset('E:')
-    # dataset = BlendedMVSDataset('/media/xrr/UBUNTU 22_0')
-    baseline_dataset = DTUOrSelfDataset(
-        'D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/public_data/haibao/preprocessed',
-        'D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/exp/haibao/preprocessed'
-    )
+    baseline_dataset = BlendedMVSDataset('E:')
+    # baseline_dataset = BlendedMVSDataset('/media/xrr/UBUNTU 22_0')
     baseline_dataset.preprocess_dataset()
+    # baseline_dataset = DTUOrSelfDataset(
+    #     'D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/public_data/haibao_small/preprocessed',
+    #     'D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/exp/haibao_small/preprocessed'
+    # )
+    # baseline_dataset.preprocess_dataset()
     # baseline_dataset.generate_baseline_rendered_mesh(save_path=baseline_dataset.path_root)
-    processed_dataset = TexturedNeUSDataset(
-        baseline_dataset.path_root,
-        'D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/exp/haibao/preprocessed'
-    )
-    processed_dataset.process_dataset(baseline_dataset, rewrite=True)
+    # processed_dataset = TexturedNeUSDataset(
+    #     baseline_dataset.path_root,
+    #     'D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/exp/haibao_small/preprocessed'
+    # )
+    # processed_dataset.process_dataset(baseline_dataset)
     # processed_dataset.generate_baseline_rendered_mesh(save_path=processed_dataset.path_root)
 
     # metrics = Metrics(baseline_dataset.path_root, processed_dataset.path_root)

@@ -7,6 +7,7 @@ from matplotlib.patches import Patch
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from PIL import Image
 
+
 class CameraPoseVisualizer:
     def __init__(self, xlim, ylim, zlim):
         self.fig = plt.figure(figsize=(8, 6))
@@ -25,13 +26,15 @@ class CameraPoseVisualizer:
                                [focal_len_scaled * aspect_ratio, -focal_len_scaled * aspect_ratio, focal_len_scaled, 1],
                                [focal_len_scaled * aspect_ratio, focal_len_scaled * aspect_ratio, focal_len_scaled, 1],
                                [-focal_len_scaled * aspect_ratio, focal_len_scaled * aspect_ratio, focal_len_scaled, 1],
-                               [-focal_len_scaled * aspect_ratio, -focal_len_scaled * aspect_ratio, focal_len_scaled, 1]])
+                               [-focal_len_scaled * aspect_ratio, -focal_len_scaled * aspect_ratio, focal_len_scaled,
+                                1]])
         vertex_transformed = vertex_std @ extrinsic.T
         meshes = [[vertex_transformed[0, :-1], vertex_transformed[1][:-1], vertex_transformed[2, :-1]],
-                            [vertex_transformed[0, :-1], vertex_transformed[2, :-1], vertex_transformed[3, :-1]],
-                            [vertex_transformed[0, :-1], vertex_transformed[3, :-1], vertex_transformed[4, :-1]],
-                            [vertex_transformed[0, :-1], vertex_transformed[4, :-1], vertex_transformed[1, :-1]],
-                            [vertex_transformed[1, :-1], vertex_transformed[2, :-1], vertex_transformed[3, :-1], vertex_transformed[4, :-1]]]
+                  [vertex_transformed[0, :-1], vertex_transformed[2, :-1], vertex_transformed[3, :-1]],
+                  [vertex_transformed[0, :-1], vertex_transformed[3, :-1], vertex_transformed[4, :-1]],
+                  [vertex_transformed[0, :-1], vertex_transformed[4, :-1], vertex_transformed[1, :-1]],
+                  [vertex_transformed[1, :-1], vertex_transformed[2, :-1], vertex_transformed[3, :-1],
+                   vertex_transformed[4, :-1]]]
         self.ax.add_collection3d(
             Poly3DCollection(meshes, facecolors=color, linewidths=0.3, edgecolors=color, alpha=0.35))
 
@@ -51,6 +54,7 @@ class CameraPoseVisualizer:
     def show(self):
         plt.title('Extrinsic Parameters')
         plt.show()
+
 
 def load_K_Rt_from_P(filename, P=None):
     if P is None:
@@ -75,6 +79,7 @@ def load_K_Rt_from_P(filename, P=None):
 
     return intrinsics, pose
 
+
 def resize(path):
     os.makedirs('temp', exist_ok=True)
     all_imgs = os.listdir(path)
@@ -83,27 +88,24 @@ def resize(path):
         im = cv2.resize(im, (0, 0), fx=0.5, fy=0.5)
         cv2.imwrite(os.path.join('temp', img), im)
 
-resize('old/data/imgs_original')
 
-# def integrate_imgs():
-#     imgs_path = 'NeuS_texture/data/imgs_original'
-#     masks_path = './NeuS_texture/data/masks'
-#
-#     imgs_dir = os.listdir(imgs_path)
-#     masks_dir = os.listdir(masks_path)
-#
-#     res_path = './NeuS_texture/data/imgs_masks'
-#     os.makedirs(res_path, exist_ok=True)
-#
-#     for i in range(len(imgs_dir)):
-#         img = Image.open(os.path.join(imgs_path, imgs_dir[i]))
-#         mask = Image.open(os.path.join(masks_path, masks_dir[i]))
-#
-#         img = np.array(img)
-#         mask = np.array(mask)
-#
-#         res = img & mask
-#         res = Image.fromarray(res)
-#         res.save(os.path.join(res_path, imgs_dir[i]))
-#
-# integrate_imgs()
+def integrate_imgs():
+    imgs_path = 'NeuS_texture/data/imgs_original'
+    masks_path = './NeuS_texture/data/masks'
+
+    imgs_dir = os.listdir(imgs_path)
+    masks_dir = os.listdir(masks_path)
+
+    res_path = './NeuS_texture/data/imgs_masks'
+    os.makedirs(res_path, exist_ok=True)
+
+    for i in range(len(imgs_dir)):
+        img = Image.open(os.path.join(imgs_path, imgs_dir[i]))
+        mask = Image.open(os.path.join(masks_path, masks_dir[i]))
+
+        img = np.array(img)
+        mask = np.array(mask)
+
+        res = img & mask
+        res = Image.fromarray(res)
+        res.save(os.path.join(res_path, imgs_dir[i]))
