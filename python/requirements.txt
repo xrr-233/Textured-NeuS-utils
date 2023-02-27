@@ -2,3 +2,4 @@ open3d
 matplotlib
 opencv-python
 pyrender
+lpips
