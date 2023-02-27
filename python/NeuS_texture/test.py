@@ -29,6 +29,13 @@ class Dataset:
         self.meshes = []
 
     def load_camera_parameters(self, src_root, convert=None):
+        """
+        指定某一个模型，导入并储存其相机参数，用以渲染和生成camera_sphere.npz
+
+        :param src_root: 模型主文件夹路径
+        :param convert: 是否需要变换，如是则输入4*4矩阵
+        :return:
+        """
         camera_images = os.listdir(os.path.join(src_root, 'image'))
         self.n_images = len(camera_images)
         sample_img = Image.open(os.path.join(src_root, 'image', camera_images[0]))
@@ -54,6 +61,14 @@ class Dataset:
             self.camera_extrinsics.append(pose)
 
     def generate_baseline_rendered_mesh(self, mesh_show_back_face=True, save_path='.'):
+        """渲染单个模型
+
+        必须在指定内外参（即运行load_camera_parameters）后执行，将该模型以指定的内外参进行图像渲染
+
+        :param mesh_show_back_face: 渲染的时候法线背面要不要透
+        :param save_path: 保存主文件夹路径
+        :return:
+        """
         trajectory = []
         for i in range(self.n_images):
             pinhole_parameters = o3d.camera.PinholeCameraParameters()
@@ -159,6 +174,13 @@ class BlendedMVSDataset(Dataset):
                 self.rewrite[identifier] = True
 
     def load_single_model(self, identifier):
+        """加载单个模型
+
+        指定某一个模型，将其导入meshes序列以备之后用Open3D渲染，并初始化相关参数
+
+        :param identifier: 指定3D模型用
+        :return:
+        """
         filename = None
         if type(identifier) == str:
             filename = identifier
