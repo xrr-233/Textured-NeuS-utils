@@ -11,6 +11,7 @@ from PIL import Image
 from tqdm import tqdm
 from skimage.metrics import peak_signal_noise_ratio as psnr
 from skimage.metrics import structural_similarity as ssim
+from pytorch3d.ops import box3d_overlap
 
 from runner import Runner
 from utils import load_K_Rt_from_P
@@ -115,6 +116,7 @@ class Dataset:
 
         vis = self.custom_draw_geometry_with_camera_trajectory['vis']
         vis.create_window(width=self.W, height=self.H)
+        print(self.meshes)
         for mesh in self.meshes:
             vis.add_geometry(mesh)
         vis.get_render_option().mesh_show_back_face = mesh_show_back_face
@@ -533,55 +535,72 @@ class SelfDataset(Dataset):
 
 
 class TexturedNeUSDataset(Dataset):
-    def __init__(self, path_baseline, path_exp):
+    def __init__(self, path_root):
         super().__init__()
         self.path_root = 'TexturedNeUSDataset_processed'
-        self.path_baseline = path_baseline
-        self.path_exp = path_exp
+        self.all_models_root = path_root
 
-    def load_model(self):
-        self.meshes = [o3d.io.read_triangle_mesh(os.path.join(self.path_root, 'textured_mesh.ply'), True)]
+    def get_single_model_path_root(self, identifier):
+        if os.path.exists(os.path.join(self.path_root, identifier)):
+            return os.path.join(self.path_root, identifier)
+        else:
+            print('model not found!')
+            exit(-1)
 
-    def process_dataset(self, counterpart, rewrite=False):
-        if rewrite:
-            shutil.rmtree(self.path_root)
-        if not os.path.exists(self.path_root):
-            os.makedirs(self.path_root, exist_ok=True)
+    def load_model(self, identifier):
+        self.meshes = [o3d.io.read_triangle_mesh(os.path.join(self.path_root, identifier, 'textured_mesh.ply'), True)]
+
+    def process_dataset(self, identifier, rewrite=False):
+        """
+
+        :param identifier: can only be type(str), int is not applicable
+        :param rewrite:
+        :return:
+        """
+        path_public = os.path.join(self.all_models_root, 'public_data', identifier)
+        path_exp = os.path.join(self.all_models_root, 'exp', identifier)
+        if rewrite and os.path.exists(os.path.join(self.path_root, identifier)):
+            shutil.rmtree(os.path.join(self.path_root, identifier))
+        if not os.path.exists(os.path.join(self.path_root, identifier)) and os.path.exists(path_public):
+            os.makedirs(os.path.join(self.path_root, identifier), exist_ok=True)
 
             # region Process checkpoint
-            model_list_raw = os.listdir(os.path.join(self.path_exp, 'womask_sphere', 'checkpoints'))
+            model_list_raw = os.listdir(os.path.join(path_exp, 'womask_sphere', 'checkpoints'))
             model_list = []
             for model_name in model_list_raw:
                 if model_name[-3:] == 'pth':
                     model_list.append(model_name)
             model_list.sort()
             latest_model_name = model_list[-1]
-            shutil.copy(os.path.join(self.path_exp, 'womask_sphere', 'checkpoints', latest_model_name),
-                        os.path.join(self.path_root, 'ckpt.pth'))
+            shutil.copy(os.path.join(path_exp, 'womask_sphere', 'checkpoints', latest_model_name),
+                        os.path.join(self.path_root, identifier, 'ckpt.pth'))
             # endregion
 
             # region Process cameras_sphere.npz
-            shutil.copy(os.path.join(self.path_baseline, 'cameras_sphere.npz'),
-                        os.path.join(self.path_root, 'cameras_sphere.npz'))
+            shutil.copy(os.path.join(path_public, 'cameras_sphere.npz'),
+                        os.path.join(self.path_root, identifier, 'cameras_sphere.npz'))
             # endregion
 
             # region Process image
             # 由于在本机渲染过于慢，请手动在高配GPU服务器上高batch训练
-            os.makedirs(os.path.join(self.path_root, 'image'), exist_ok=True)
-            self.runner = Runner('', counterpart.n_images, counterpart.W, counterpart.H)
+            os.makedirs(os.path.join(self.path_root, identifier, 'image'), exist_ok=True)
+            self.load_camera_parameters(path_public)
+            '''
+            self.runner = Runner('', self.n_images, self.W, self.H)
             self.runner.load_camera_params(os.path.join(self.path_root, 'cameras_sphere.npz'))
             self.runner.load_ckpt(os.path.join(self.path_root, 'ckpt.pth'))
             self.runner.validate_image(save_path=self.path_root)
+            '''
             # endregion
 
             # region Process mesh
-            shutil.copy(os.path.join(self.path_exp, 'womask_sphere', 'meshes', 'vertex_color.ply'),
-                        os.path.join(self.path_root, 'textured_mesh.ply'))
-            os.makedirs(os.path.join(self.path_root, 'image_mesh'), exist_ok=True)
-            self.load_model()
-            self.generate_baseline_rendered_mesh(save_path=self.path_root)
+            shutil.copy(os.path.join(path_exp, 'womask_sphere', 'meshes', 'vertex_color.ply'),
+                        os.path.join(self.path_root, identifier, 'textured_mesh.ply'))
+            os.makedirs(os.path.join(self.path_root, identifier, 'image_mesh'), exist_ok=True)
+            self.load_model(identifier)
+            self.generate_baseline_rendered_mesh(save_path=os.path.join(self.path_root, identifier))
             # endregion
-        self.load_camera_parameters(self.path_root)
+        self.load_camera_parameters(os.path.join(self.path_root, identifier))
 
 
 class Metrics:
@@ -705,42 +724,73 @@ class Metrics:
         all_lpips = np.asarray(all_lpips)
         return all_lpips
 
+    def split_batch(self, mesh, batch_num=512):
+        mesh_complete = mesh.shape[0] // batch_num
+        mesh_surplus = mesh[mesh_complete * batch_num:]
+        mesh = np.split(mesh[:mesh_complete * batch_num], mesh_complete)
+        mesh_complete = np.zeros((batch_num, 3))
+        mesh_complete[:len(mesh_surplus)] = mesh_surplus
+        mesh.append(mesh_complete)
+        for i in range(len(mesh)):
+            mesh[i] = mesh[i].reshape((mesh[i].shape[0], 1, 3))
+        mesh = np.concatenate(mesh, axis=1)
+        return mesh
 
-def get_blended_mvs_dataset_pair(usb_path, model_name, rewrite=False):
+    def ChamferL1(self):
+        from ChamferDistancePytorch.chamfer_python import distChamfer
+
+        mesh_baseline = np.asarray(
+            o3d.io.read_triangle_mesh(os.path.join(self.baseline_path, 'textured_mesh.ply'), True).vertices,
+            dtype=np.float32)
+        mesh_baseline = self.split_batch(mesh_baseline)
+        print(mesh_baseline.shape)
+        mesh_actual = np.asarray(
+            o3d.io.read_triangle_mesh(os.path.join(self.actual_path, 'textured_mesh.ply'), True).vertices,
+            dtype=np.float32)
+        mesh_actual = self.split_batch(mesh_actual)
+        print(mesh_actual.shape)
+        dist1, dist2, idx1, idx2 = distChamfer(torch.tensor(mesh_baseline), torch.tensor(mesh_actual))
+        print(dist1.shape, dist2.shape, idx1.shape, idx2.shape)
+
+
+def get_blended_mvs_dataset_pair(usb_path, bmvs_model_name, processed_model_name, rewrite=False):
     """
 
-    :param usb_path: 'E:' or '/media/xrr/UBUNTU 22_0'
+    :param usb_path: 'E:/bmvs' or '/media/xrr/UBUNTU 22_0'
+    :param bmvs_model_name: e.g. '5a7d3db14989e929563eb153'
+    :param processed_model_name: e.g. 'bmvs_dog/preprocessed'
     :return:
     """
     baseline_dataset = BlendedMVSDataset(usb_path)
     if rewrite:
-        baseline_dataset.set_rewrite(model_name)
+        baseline_dataset.set_rewrite(bmvs_model_name)
     baseline_dataset.preprocess_dataset()
-    baseline_dataset.load_single_model(model_name)
+    baseline_dataset.load_single_model(bmvs_model_name)
 
-    processed_dataset = TexturedNeUSDataset(
-        baseline_dataset.get_single_model_path_root(model_name),
-        'D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/exp/haibao_small/preprocessed'
-    )
-    processed_dataset.process_dataset(baseline_dataset)
-    processed_dataset.load_model()
+    processed_dataset = TexturedNeUSDataset('D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS')
+    processed_dataset.process_dataset(processed_model_name)
+    processed_dataset.load_model(processed_model_name)
 
     return baseline_dataset, processed_dataset
 
 
-def get_dtu_dataset_pair(model_name, rewrite=False):
-    baseline_dataset = DTUDataset('D:/dataset/dtu')
-    if rewrite:
-        baseline_dataset.set_rewrite(model_name)
-    baseline_dataset.preprocess_dataset()
-    baseline_dataset.load_single_model(model_name)
+def get_dtu_dataset_pair(usb_path, dtu_model_name, processed_model_name, rewrite=False):
+    """
 
-    processed_dataset = TexturedNeUSDataset(
-        baseline_dataset.get_single_model_path_root(model_name),
-        'D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/exp/haibao_small/preprocessed'
-    )
-    processed_dataset.process_dataset(baseline_dataset)
-    processed_dataset.load_model()
+    :param usb_path: 'D:/dataset/dtu', 'E:/dtu' or '/media/xrr/UBUNTU 22_0'
+    :param dtu_model_name: e.g. 'scan1'
+    :param processed_model_name: e.g. 'scan1'
+    :return:
+    """
+    baseline_dataset = DTUDataset(usb_path)
+    if rewrite:
+        baseline_dataset.set_rewrite(dtu_model_name)
+    baseline_dataset.preprocess_dataset()
+    baseline_dataset.load_single_model(dtu_model_name)
+
+    processed_dataset = TexturedNeUSDataset('D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS')
+    processed_dataset.process_dataset(processed_model_name)
+    processed_dataset.load_model(processed_model_name)
 
     return baseline_dataset, processed_dataset
 
@@ -752,12 +802,9 @@ def get_self_dataset_pair(rewrite=False):
     )
     baseline_dataset.preprocess_dataset(rewrite=rewrite)
 
-    processed_dataset = TexturedNeUSDataset(
-        baseline_dataset.path_root,
-        'D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/exp/haibao_small/preprocessed'
-    )
-    processed_dataset.process_dataset(baseline_dataset)
-    processed_dataset.load_model()
+    processed_dataset = TexturedNeUSDataset('D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS')
+    processed_dataset.process_dataset('haibao_small/preprocessed')
+    processed_dataset.load_model('haibao_small/preprocessed')
 
     return baseline_dataset, processed_dataset
 
@@ -773,13 +820,15 @@ def visualize_extrinsic(dataset):
 
 
 if __name__ == '__main__':
-    # baseline_dataset, processed_dataset = get_blended_mvs_dataset_pair('E:', '5a7d3db14989e929563eb153', rewrite=True)
-    baseline_dataset, processed_dataset = get_dtu_dataset_pair(0)
+    identifier = 'scan1'
+    baseline_dataset, processed_dataset = get_dtu_dataset_pair('E:/dtu', identifier, identifier)
 
-    visualize_extrinsic(baseline_dataset)
-    visualize_extrinsic(processed_dataset)
+    # visualize_extrinsic(baseline_dataset)
+    # visualize_extrinsic(processed_dataset)
 
-    # metrics = Metrics(baseline_dataset.path_root, processed_dataset.path_root)
+    metrics = Metrics(baseline_dataset.get_single_model_path_root(identifier),
+                      processed_dataset.get_single_model_path_root(identifier))
+    metrics.ChamferL1()
     # all_psnr = metrics.PSNR('image')`
     # print(all_psnr)
     # all_ssim = metrics.SSIM('image')
