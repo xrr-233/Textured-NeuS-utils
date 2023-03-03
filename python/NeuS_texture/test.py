@@ -1,4 +1,5 @@
 import copy
+import logging
 import math
 import os
 import shutil
@@ -11,7 +12,6 @@ from PIL import Image
 from tqdm import tqdm
 from skimage.metrics import peak_signal_noise_ratio as psnr
 from skimage.metrics import structural_similarity as ssim
-from pytorch3d.ops import box3d_overlap
 
 from runner import Runner
 from utils import load_K_Rt_from_P
@@ -608,6 +608,9 @@ class Metrics:
         self.baseline_path = baseline_path
         self.actual_path = actual_path
 
+        camera_dict = np.load(os.path.join(baseline_path, 'cameras_sphere.npz'))
+        self.scale_mat = camera_dict['scale_mat_0'].astype(np.float32)
+
     def check_image_dir(self, target):
         if not target == 'image' and not target == 'image_mesh':
             print('Parameter "target" only accepts "image" or "image_mesh"')
@@ -724,11 +727,18 @@ class Metrics:
         all_lpips = np.asarray(all_lpips)
         return all_lpips
 
-    def split_batch(self, mesh, batch_num=512):
+    def split_batch(self, mesh, batch_num=1024):
+        """
+        占用内存比较大，建议在高配机子上训
+
+        :param mesh:
+        :param batch_num:
+        :return:
+        """
         mesh_complete = mesh.shape[0] // batch_num
         mesh_surplus = mesh[mesh_complete * batch_num:]
         mesh = np.split(mesh[:mesh_complete * batch_num], mesh_complete)
-        mesh_complete = np.zeros((batch_num, 3))
+        mesh_complete = np.broadcast_to(mesh_surplus[-1], (batch_num, 3)).copy()
         mesh_complete[:len(mesh_surplus)] = mesh_surplus
         mesh.append(mesh_complete)
         for i in range(len(mesh)):
@@ -738,19 +748,40 @@ class Metrics:
 
     def ChamferL1(self):
         from ChamferDistancePytorch.chamfer_python import distChamfer
+        # logging.basicConfig(level=logging.DEBUG)
 
         mesh_baseline = np.asarray(
             o3d.io.read_triangle_mesh(os.path.join(self.baseline_path, 'textured_mesh.ply'), True).vertices,
             dtype=np.float32)
+        mesh_baseline = (mesh_baseline - self.scale_mat[:3, 3][None]) / self.scale_mat[0, 0]
+        logging.debug(mesh_baseline.shape)
+        mesh_baseline_len = mesh_baseline.shape[0]
         mesh_baseline = self.split_batch(mesh_baseline)
-        print(mesh_baseline.shape)
+        bbox_max = np.max(mesh_baseline.reshape((-1, 3)), axis=0)
+        bbox_min = np.min(mesh_baseline.reshape((-1, 3)), axis=0)
+        logging.debug((bbox_max, bbox_min))
         mesh_actual = np.asarray(
             o3d.io.read_triangle_mesh(os.path.join(self.actual_path, 'textured_mesh.ply'), True).vertices,
             dtype=np.float32)
+        mesh_actual = (mesh_actual - self.scale_mat[:3, 3][None]) / self.scale_mat[0, 0]
+        logging.debug(mesh_actual.shape)
+        mesh_actual_len = mesh_actual.shape[0]
         mesh_actual = self.split_batch(mesh_actual)
-        print(mesh_actual.shape)
-        dist1, dist2, idx1, idx2 = distChamfer(torch.tensor(mesh_baseline), torch.tensor(mesh_actual))
-        print(dist1.shape, dist2.shape, idx1.shape, idx2.shape)
+        bbox_max = np.max(mesh_actual.reshape((-1, 3)), axis=0)
+        bbox_min = np.min(mesh_actual.reshape((-1, 3)), axis=0)
+        logging.debug((bbox_max, bbox_min))
+        logging.debug(mesh_baseline.shape)
+        logging.debug(mesh_actual.shape)
+        dist1, dist2, _, _ = distChamfer(torch.tensor(mesh_baseline), torch.tensor(mesh_actual))
+        dist1 = dist1.numpy().reshape((-1))[:mesh_baseline_len]
+        dist2 = dist2.numpy().reshape((-1))[:mesh_actual_len]
+        logging.debug((dist1.shape, dist2.shape))
+        logging.debug(dist1)
+        logging.debug(dist2)
+        accuracy = np.average(dist1)
+        completeness = np.average(dist2)
+        logging.debug(accuracy, completeness)
+        return (accuracy + completeness) / 2
 
 
 def get_blended_mvs_dataset_pair(usb_path, bmvs_model_name, processed_model_name, rewrite=False):
@@ -820,15 +851,11 @@ def visualize_extrinsic(dataset):
 
 
 if __name__ == '__main__':
-    identifier = 'scan1'
-    baseline_dataset, processed_dataset = get_dtu_dataset_pair('E:/dtu', identifier, identifier)
 
-    # visualize_extrinsic(baseline_dataset)
-    # visualize_extrinsic(processed_dataset)
-
-    metrics = Metrics(baseline_dataset.get_single_model_path_root(identifier),
-                      processed_dataset.get_single_model_path_root(identifier))
-    metrics.ChamferL1()
+    metrics = Metrics('TexturedNeUSDataset_processed/scan1',
+                      'DTUDataset_preprocessed/scan1')
+    chamfer = metrics.ChamferL1()
+    print(chamfer)
     # all_psnr = metrics.PSNR('image')`
     # print(all_psnr)
     # all_ssim = metrics.SSIM('image')
