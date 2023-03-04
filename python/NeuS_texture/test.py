@@ -131,7 +131,7 @@ class BlendedMVSDataset(Dataset):
         self.path_root = 'BlendedMVS_preprocessed'
         self.image_dirs = []
         for filename in os.listdir(path_root):
-            if filename.startswith('dataset_full_res_'):
+            if filename.startswith('dataset') and 'res' in filename:
                 self.image_dirs.append(os.path.join(path_root, filename))
         self.textured_mesh_dir = os.path.join(path_root, 'dataset_textured_meshes')
 
@@ -261,7 +261,11 @@ class BlendedMVSDataset(Dataset):
                 os.makedirs(f'{self.path_root}/{filename}/mask', exist_ok=True)
 
                 # region Process image
-                src_root = os.path.join(filename_root, filename, filename, filename, 'blended_images')
+                if 'full' in filename_root:
+                    filename_root = os.path.join(filename_root, filename, filename, filename)
+                elif 'low' in filename_root:
+                    filename_root = os.path.join(filename_root, filename)
+                src_root = os.path.join(filename_root, 'blended_images')
                 dst_root = f'{self.path_root}/{filename}'
                 for index, file in enumerate(os.listdir(src_root)):
                     img = cv2.imread(os.path.join(src_root, file))
@@ -270,7 +274,7 @@ class BlendedMVSDataset(Dataset):
                 # endregion
 
                 # region Process camera_sphere.npz
-                src_root = os.path.join(filename_root, filename, filename, filename, 'cams')
+                src_root = os.path.join(filename_root, 'cams')
                 cam_dict = dict()
                 convert_mat = np.zeros([4, 4], dtype=np.float32)
                 convert_mat[0, 1] = 1.0
@@ -840,10 +844,10 @@ def get_self_dataset_pair(rewrite=False):
     return baseline_dataset, processed_dataset
 
 
-def visualize_extrinsic(dataset):
+def visualize_extrinsic(dataset, radius, height):
     camera_previews = []
     for extrinsic in dataset.camera_extrinsics:
-        preview = o3d.geometry.TriangleMesh.create_cone(radius=2, height=4)
+        preview = o3d.geometry.TriangleMesh.create_cone(radius=radius, height=height)
         preview.compute_vertex_normals()
         preview = copy.deepcopy(preview).transform(extrinsic)
         camera_previews.append(preview)
@@ -851,14 +855,22 @@ def visualize_extrinsic(dataset):
 
 
 if __name__ == '__main__':
+    # baseline_dataset, processed_dataset = get_blended_mvs_dataset_pair('E:/bmvs', '5a7d3db14989e929563eb153', 'bmvs_dog')
+    baseline_dataset = BlendedMVSDataset('E:/bmvs')
+    baseline_dataset.preprocess_dataset()
+    baseline_dataset.load_single_model('bmvs_dog2')
+    visualize_extrinsic(baseline_dataset, radius=0.02, height=0.04)
+    baseline_dataset.load_single_model('5c1af2e2bee9a723c963d019')
+    visualize_extrinsic(baseline_dataset, radius=0.02, height=0.04)
 
     metrics = Metrics('TexturedNeUSDataset_processed/scan1',
                       'DTUDataset_preprocessed/scan1')
-    chamfer = metrics.ChamferL1()
-    print(chamfer)
+
     # all_psnr = metrics.PSNR('image')`
     # print(all_psnr)
     # all_ssim = metrics.SSIM('image')
     # print(all_ssim)
     # all_lpips = metrics.LPIPS('image')
     # print(all_lpips)
+    # chamfer = metrics.ChamferL1()
+    # print(chamfer)
