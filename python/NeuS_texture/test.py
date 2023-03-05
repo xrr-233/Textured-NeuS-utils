@@ -29,12 +29,11 @@ class Dataset:
         self.camera_extrinsics = []
         self.meshes = []
 
-    def load_camera_parameters(self, src_root, convert=None):
+    def load_camera_parameters(self, src_root):
         """
         指定某一个模型，导入并储存其相机参数，用以渲染和生成camera_sphere.npz
 
         :param src_root: 模型主文件夹路径
-        :param convert: 是否需要变换，如是则输入4*4矩阵
         :return:
         """
         camera_images = os.listdir(os.path.join(src_root, 'image'))
@@ -46,10 +45,7 @@ class Dataset:
         camera_dict = np.load(os.path.join(src_root, 'cameras_sphere.npz'))
         world_mats_np = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]
         scale_mats_np = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]
-        if convert is not None:
-            convert_mat = np.array(convert, dtype=np.float32)
-        else:
-            convert_mat = np.eye(4, dtype=np.float32)
+
         self.camera_intrinsics = []
         self.camera_extrinsics = []
         for scale_mat, world_mat in zip(scale_mats_np, world_mats_np):
@@ -57,8 +53,6 @@ class Dataset:
             P = P[:3, :4]
             intrinsics, pose = load_K_Rt_from_P(None, P)
             self.camera_intrinsics.append(intrinsics[:3, :3])
-            if convert:
-                pose = pose @ convert_mat
             self.camera_extrinsics.append(pose)
 
     def generate_baseline_rendered_mesh(self, mesh_show_back_face=True, save_path='.'):
@@ -76,7 +70,7 @@ class Dataset:
             pinhole_intrinsic = o3d.camera.PinholeCameraIntrinsic()
             pinhole_intrinsic.intrinsic_matrix = self.camera_intrinsics[i]
             pinhole_parameters.intrinsic = pinhole_intrinsic
-            pinhole_parameters.extrinsic = self.camera_extrinsics[i]
+            pinhole_parameters.extrinsic = np.linalg.inv(self.camera_extrinsics[i])
             trajectory.append(pinhole_parameters)
         pinhole_trajectory = o3d.camera.PinholeCameraTrajectory()
         pinhole_trajectory.parameters = trajectory
@@ -205,12 +199,7 @@ class BlendedMVSDataset(Dataset):
                 mesh.compute_vertex_normals()  # allow light effect
                 self.meshes.append(mesh)
 
-        self.load_camera_parameters(os.path.join(self.get_single_model_path_root(identifier)), convert=[
-            [0, 1, 0, 0],
-            [1, 0, 0, 0],
-            [0, 0, -1, 0],
-            [0, 0, 0, 1],
-        ])
+        self.load_camera_parameters(os.path.join(self.get_single_model_path_root(identifier)))
 
     def export_bundler_out(self, dst_root):
         with open(os.path.join(dst_root, 'meshlab_camera.out'), 'w') as f:
@@ -276,11 +265,6 @@ class BlendedMVSDataset(Dataset):
                 # region Process camera_sphere.npz
                 src_root = os.path.join(filename_root, 'cams')
                 cam_dict = dict()
-                convert_mat = np.zeros([4, 4], dtype=np.float32)
-                convert_mat[0, 1] = 1.0
-                convert_mat[1, 0] = 1.0
-                convert_mat[2, 2] = -1.0
-                convert_mat[3, 3] = 1.0
                 self.camera_extrinsics = []
                 self.camera_intrinsics = []
                 for index, file in enumerate(os.listdir(src_root)):
@@ -292,9 +276,8 @@ class BlendedMVSDataset(Dataset):
                         row_2 = all_lines[2].split(' ')[:4]
                         row_3 = all_lines[3].split(' ')[:4]
                         row_4 = all_lines[4].split(' ')[:4]
-                        extrinsic = np.array([row_1, row_2, row_3, row_4], dtype=np.float32)
+                        extrinsic = np.linalg.inv(np.array([row_1, row_2, row_3, row_4], dtype=np.float32))
                         self.camera_extrinsics.append(extrinsic)
-                        extrinsic = extrinsic @ convert_mat
                         row_1 = all_lines[7].split(' ')[:3]
                         row_1.append('0')
                         row_2 = all_lines[8].split(' ')[:3]

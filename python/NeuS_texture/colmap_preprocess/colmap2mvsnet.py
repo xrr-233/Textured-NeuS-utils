@@ -17,6 +17,7 @@ import cv2
 
 
 #============================ read_model.py ============================#
+
 CameraModel = collections.namedtuple(
     "CameraModel", ["model_id", "model_name", "num_params"])
 Camera = collections.namedtuple(
@@ -277,6 +278,49 @@ def rotmat2qvec(R):
     return qvec
 #============================ read_model.py ============================#
 
+def func_neus():
+    from pose_utils import load_colmap_data, save_poses
+    poses, pts3d, perm = load_colmap_data(model_dir, True)
+    poses = save_poses(args.dense_folder, poses, pts3d, perm)
+    poses_raw = poses[:, :, :4]
+    hwf = poses[:, :, 4]
+
+    cam_dir = os.path.join(args.dense_folder, 'cams_neus')
+    try:
+        os.makedirs(cam_dir)
+    except os.error:
+        print(cam_dir + ' already exist.')
+
+    num_images = len(poses_raw)
+    # Convert space
+    convert_mat = np.zeros([4, 4], dtype=np.float32)
+    convert_mat[0, 1] = 1.0
+    convert_mat[1, 0] = 1.0
+    convert_mat[2, 2] = -1.0
+    convert_mat[3, 3] = 1.0
+
+    for i in range(num_images):
+        pose = np.diag([1.0, 1.0, 1.0, 1.0]).astype(np.float32)
+        pose[:3, :4] = poses_raw[i]
+        pose = pose @ convert_mat
+        h, w, f = hwf[i, 0], hwf[i, 1], hwf[i, 2]
+        intrinsic = np.diag([f, f, 1.0, 1.0]).astype(np.float32)
+        intrinsic[0, 2] = (w - 1) * 0.5
+        intrinsic[1, 2] = (h - 1) * 0.5
+
+        with open(os.path.join(cam_dir, '%08d_cam.txt' % i), 'w') as f:
+            f.write('extrinsic\n')
+            for j in range(4):
+                for k in range(4):
+                    f.write(str(pose[j, k]) + ' ')
+                f.write('\n')
+            f.write('\nintrinsic\n')
+            for j in range(3):
+                for k in range(3):
+                    f.write(str(intrinsic[j, k]) + ' ')
+                f.write('\n')
+
+    print('Done with imgs2poses')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Convert colmap camera')
@@ -293,6 +337,8 @@ if __name__ == '__main__':
     parser.add_argument('--test', action='store_true', default=False, help='If set, do not write to file.')
     parser.add_argument('--convert_format', action='store_true', default=False, help='If set, convert image to jpg format.')
 
+    parser.add_argument('--mode', help='neus or mvsnet')
+
     args = parser.parse_args()
 
     image_dir = os.path.join(args.dense_folder, 'images')
@@ -300,144 +346,161 @@ if __name__ == '__main__':
     cam_dir = os.path.join(args.dense_folder, 'cams')
     renamed_dir = os.path.join(args.dense_folder, 'blended_images')
 
-    cameras, images, points3d = read_model(model_dir, '.bin')
-    num_images = len(list(images.items()))
+    if args.mode == 'mvsnet':
+        cameras, images, points3d = read_model(model_dir, '.bin')
+        num_images = len(list(images.items()))
 
-    param_type = {
-        'SIMPLE_PINHOLE': ['f', 'cx', 'cy'],
-        'PINHOLE': ['fx', 'fy', 'cx', 'cy'],
-        'SIMPLE_RADIAL': ['f', 'cx', 'cy', 'k'],
-        'SIMPLE_RADIAL_FISHEYE': ['f', 'cx', 'cy', 'k'],
-        'RADIAL': ['f', 'cx', 'cy', 'k1', 'k2'],
-        'RADIAL_FISHEYE': ['f', 'cx', 'cy', 'k1', 'k2'],
-        'OPENCV': ['fx', 'fy', 'cx', 'cy', 'k1', 'k2', 'p1', 'p2'],
-        'OPENCV_FISHEYE': ['fx', 'fy', 'cx', 'cy', 'k1', 'k2', 'k3', 'k4'],
-        'FULL_OPENCV': ['fx', 'fy', 'cx', 'cy', 'k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'k5', 'k6'],
-        'FOV': ['fx', 'fy', 'cx', 'cy', 'omega'],
-        'THIN_PRISM_FISHEYE': ['fx', 'fy', 'cx', 'cy', 'k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'sx1', 'sy1']
-    }
+        param_type = {
+            'SIMPLE_PINHOLE': ['f', 'cx', 'cy'],
+            'PINHOLE': ['fx', 'fy', 'cx', 'cy'],
+            'SIMPLE_RADIAL': ['f', 'cx', 'cy', 'k'],
+            'SIMPLE_RADIAL_FISHEYE': ['f', 'cx', 'cy', 'k'],
+            'RADIAL': ['f', 'cx', 'cy', 'k1', 'k2'],
+            'RADIAL_FISHEYE': ['f', 'cx', 'cy', 'k1', 'k2'],
+            'OPENCV': ['fx', 'fy', 'cx', 'cy', 'k1', 'k2', 'p1', 'p2'],
+            'OPENCV_FISHEYE': ['fx', 'fy', 'cx', 'cy', 'k1', 'k2', 'k3', 'k4'],
+            'FULL_OPENCV': ['fx', 'fy', 'cx', 'cy', 'k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'k5', 'k6'],
+            'FOV': ['fx', 'fy', 'cx', 'cy', 'omega'],
+            'THIN_PRISM_FISHEYE': ['fx', 'fy', 'cx', 'cy', 'k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'sx1', 'sy1']
+        }
 
-    # intrinsic
-    intrinsic = {}
-    for camera_id, cam in cameras.items():
-        params_dict = {key: value for key, value in zip(param_type[cam.model], cam.params)}
-        if 'f' in param_type[cam.model]:
-            params_dict['fx'] = params_dict['f']
-            params_dict['fy'] = params_dict['f']
-        i = np.array([
-            [params_dict['fx'], 0, params_dict['cx']],
-            [0, params_dict['fy'], params_dict['cy']],
-            [0, 0, 1]
-        ])
-        intrinsic[camera_id] = i
-    print('intrinsic[1]\n', intrinsic[1], end='\n\n')
+        # intrinsic
+        intrinsic = {}
+        for camera_id, cam in cameras.items():
+            params_dict = {key: value for key, value in zip(param_type[cam.model], cam.params)}
+            if 'f' in param_type[cam.model]:
+                params_dict['fx'] = params_dict['f']
+                params_dict['fy'] = params_dict['f']
+            i = np.array([
+                [params_dict['fx'], 0, params_dict['cx']],
+                [0, params_dict['fy'], params_dict['cy']],
+                [0, 0, 1]
+            ])
+            intrinsic[camera_id] = i
+        print('intrinsic[1]\n', intrinsic[1], end='\n\n')
 
-    # extrinsic
-    extrinsic = {}
-    for image_id, image in images.items():
-        e = np.zeros((4, 4))
-        e[:3, :3] = qvec2rotmat(image.qvec)
-        e[:3, 3] = image.tvec
-        e[3, 3] = 1
-        extrinsic[image_id] = e
-    print('extrinsic[1]\n', extrinsic[1], end='\n\n')
+        # extrinsic
+        extrinsic = {}
+        for image_id, image in images.items():
+            e = np.zeros((4, 4))
+            e[:3, :3] = qvec2rotmat(image.qvec)
+            e[:3, 3] = image.tvec
+            e[3, 3] = 1
+            print(e)
+            extrinsic[image_id] = e
+        print('extrinsic[1]\n', extrinsic[1], end='\n\n')
 
-    # depth range and interval
-    depth_ranges = {}
-    for i in range(num_images):
-        zs = []
-        for p3d_id in images[i+1].point3D_ids:
-            if p3d_id == -1:
-                continue
-            transformed = np.matmul(extrinsic[i+1], [points3d[p3d_id].xyz[0], points3d[p3d_id].xyz[1], points3d[p3d_id].xyz[2], 1])
-            zs.append(np.asscalar(transformed[2]))
-        zs_sorted = sorted(zs)
-        # relaxed depth range
-        depth_min = zs_sorted[int(len(zs) * .01)]
-        depth_max = zs_sorted[int(len(zs) * .99)]
-        # determine depth number by inverse depth setting, see supplementary material
-        if args.max_d == 0:
-            image_int = intrinsic[images[i+1].camera_id]
-            image_ext = extrinsic[i+1]
-            image_r = image_ext[0:3, 0:3]
-            image_t = image_ext[0:3, 3]
-            p1 = [image_int[0, 2], image_int[1, 2], 1]
-            p2 = [image_int[0, 2] + 1, image_int[1, 2], 1]
-            P1 = np.matmul(np.linalg.inv(image_int), p1) * depth_min
-            P1 = np.matmul(np.linalg.inv(image_r), (P1 - image_t))
-            P2 = np.matmul(np.linalg.inv(image_int), p2) * depth_min
-            P2 = np.matmul(np.linalg.inv(image_r), (P2 - image_t))
-            depth_num = (1 / depth_min - 1 / depth_max) / (1 / depth_min - 1 / (depth_min + np.linalg.norm(P2 - P1)))
-        else:
-            depth_num = args.max_d
-        depth_interval = (depth_max - depth_min) / (depth_num - 1) / args.interval_scale
-        depth_ranges[i+1] = (depth_min, depth_interval, depth_num, depth_max)
-    print('depth_ranges[1]\n', depth_ranges[1], end='\n\n')
+        # depth range and interval
+        depth_ranges = {}
+        for i in range(num_images):
+            zs = []
+            for p3d_id in images[i + 1].point3D_ids:
+                if p3d_id == -1:
+                    continue
+                transformed = np.matmul(extrinsic[i + 1],
+                                        [points3d[p3d_id].xyz[0], points3d[p3d_id].xyz[1], points3d[p3d_id].xyz[2], 1])
+                zs.append(np.asscalar(transformed[2]))
+            zs_sorted = sorted(zs)
+            # relaxed depth range
+            depth_min = zs_sorted[int(len(zs) * .01)]
+            depth_max = zs_sorted[int(len(zs) * .99)]
+            # determine depth number by inverse depth setting, see supplementary material
+            if args.max_d == 0:
+                image_int = intrinsic[images[i + 1].camera_id]
+                image_ext = extrinsic[i + 1]
+                image_r = image_ext[0:3, 0:3]
+                image_t = image_ext[0:3, 3]
+                p1 = [image_int[0, 2], image_int[1, 2], 1]
+                p2 = [image_int[0, 2] + 1, image_int[1, 2], 1]
+                P1 = np.matmul(np.linalg.inv(image_int), p1) * depth_min
+                P1 = np.matmul(np.linalg.inv(image_r), (P1 - image_t))
+                P2 = np.matmul(np.linalg.inv(image_int), p2) * depth_min
+                P2 = np.matmul(np.linalg.inv(image_r), (P2 - image_t))
+                depth_num = (1 / depth_min - 1 / depth_max) / (
+                            1 / depth_min - 1 / (depth_min + np.linalg.norm(P2 - P1)))
+            else:
+                depth_num = args.max_d
+            depth_interval = (depth_max - depth_min) / (depth_num - 1) / args.interval_scale
+            depth_ranges[i + 1] = (depth_min, depth_interval, depth_num, depth_max)
+        print('depth_ranges[1]\n', depth_ranges[1], end='\n\n')
 
-    # view selection
-    score = np.zeros((len(images), len(images)))
-    queue = []
-    for i in range(len(images)):
-        for j in range(i + 1, len(images)):
-            queue.append((i, j))
-    def calc_score(inputs):
-        i, j = inputs
-        id_i = images[i+1].point3D_ids
-        id_j = images[j+1].point3D_ids
-        id_intersect = [it for it in id_i if it in id_j]
-        cam_center_i = -np.matmul(extrinsic[i+1][:3, :3].transpose(), extrinsic[i+1][:3, 3:4])[:, 0]
-        cam_center_j = -np.matmul(extrinsic[j+1][:3, :3].transpose(), extrinsic[j+1][:3, 3:4])[:, 0]
-        score = 0
-        for pid in id_intersect:
-            if pid == -1:
-                continue
-            p = points3d[pid].xyz
-            theta = (180 / np.pi) * np.arccos(np.dot(cam_center_i - p, cam_center_j - p) / np.linalg.norm(cam_center_i - p) / np.linalg.norm(cam_center_j - p))
-            score += np.exp(-(theta - args.theta0) * (theta - args.theta0) / (2 * (args.sigma1 if theta <= args.theta0 else args.sigma2) ** 2))
-        return i, j, score
-    p = mp.Pool(processes=mp.cpu_count())
-    result = p.map(calc_score, queue)
-    for i, j, s in result:
-        score[i, j] = s
-        score[j, i] = s
-    view_sel = []
-    for i in range(len(images)):
-        sorted_score = np.argsort(score[i])[::-1]
-        view_sel.append([(k, score[i, k]) for k in sorted_score[:10]])
-    print('view_sel[0]\n', view_sel[0], end='\n\n')
+        # view selection
+        score = np.zeros((len(images), len(images)))
+        queue = []
+        for i in range(len(images)):
+            for j in range(i + 1, len(images)):
+                queue.append((i, j))
 
-    # write
-    try:
-        os.makedirs(cam_dir)
-    except os.error:
-        print(cam_dir + ' already exist.')
-    try:
-        os.makedirs(renamed_dir)
-    except os.error:
-        print(renamed_dir + ' already exist.')
-    for i in range(num_images):
-        with open(os.path.join(cam_dir, '%08d_cam.txt' % i), 'w') as f:
-            f.write('extrinsic\n')
-            for j in range(4):
-                for k in range(4):
-                    f.write(str(extrinsic[i+1][j, k]) + ' ')
+
+        def calc_score(inputs):
+            i, j = inputs
+            id_i = images[i + 1].point3D_ids
+            id_j = images[j + 1].point3D_ids
+            id_intersect = [it for it in id_i if it in id_j]
+            cam_center_i = -np.matmul(extrinsic[i + 1][:3, :3].transpose(), extrinsic[i + 1][:3, 3:4])[:, 0]
+            cam_center_j = -np.matmul(extrinsic[j + 1][:3, :3].transpose(), extrinsic[j + 1][:3, 3:4])[:, 0]
+            score = 0
+            for pid in id_intersect:
+                if pid == -1:
+                    continue
+                p = points3d[pid].xyz
+                theta = (180 / np.pi) * np.arccos(
+                    np.dot(cam_center_i - p, cam_center_j - p) / np.linalg.norm(cam_center_i - p) / np.linalg.norm(
+                        cam_center_j - p))
+                score += np.exp(-(theta - args.theta0) * (theta - args.theta0) / (
+                        2 * (args.sigma1 if theta <= args.theta0 else args.sigma2) ** 2))
+            return i, j, score
+
+
+        p = mp.Pool(processes=mp.cpu_count())
+        result = p.map(calc_score, queue)
+        for i, j, s in result:
+            score[i, j] = s
+            score[j, i] = s
+        view_sel = []
+        for i in range(len(images)):
+            sorted_score = np.argsort(score[i])[::-1]
+            view_sel.append([(k, score[i, k]) for k in sorted_score[:10]])
+        print('view_sel[0]\n', view_sel[0], end='\n\n')
+
+        # write
+        try:
+            os.makedirs(cam_dir)
+        except os.error:
+            print(cam_dir + ' already exist.')
+        try:
+            os.makedirs(renamed_dir)
+        except os.error:
+            print(renamed_dir + ' already exist.')
+        for i in range(num_images):
+            with open(os.path.join(cam_dir, '%08d_cam.txt' % i), 'w') as f:
+                f.write('extrinsic\n')
+                for j in range(4):
+                    for k in range(4):
+                        f.write(str(extrinsic[i + 1][j, k]) + ' ')
+                    f.write('\n')
+                f.write('\nintrinsic\n')
+                for j in range(3):
+                    for k in range(3):
+                        f.write(str(intrinsic[images[i + 1].camera_id][j, k]) + ' ')
+                    f.write('\n')
+                f.write('\n%f %f %f %f\n' % (
+                    depth_ranges[i + 1][0], depth_ranges[i + 1][1], depth_ranges[i + 1][2], depth_ranges[i + 1][3]))
+        with open(os.path.join(args.dense_folder, 'pair.txt'), 'w') as f:
+            f.write('%d\n' % len(images))
+            for i, sorted_score in enumerate(view_sel):
+                f.write('%d\n%d ' % (i, len(sorted_score)))
+                for image_id, s in sorted_score:
+                    f.write('%d %f ' % (image_id, s))
                 f.write('\n')
-            f.write('\nintrinsic\n')
-            for j in range(3):
-                for k in range(3):
-                    f.write(str(intrinsic[images[i+1].camera_id][j, k]) + ' ')
-                f.write('\n')
-            f.write('\n%f %f %f %f\n' % (depth_ranges[i+1][0], depth_ranges[i+1][1], depth_ranges[i+1][2], depth_ranges[i+1][3]))
-    with open(os.path.join(args.dense_folder, 'pair.txt'), 'w') as f:
-        f.write('%d\n' % len(images))
-        for i, sorted_score in enumerate(view_sel):
-            f.write('%d\n%d ' % (i, len(sorted_score)))
-            for image_id, s in sorted_score:
-                f.write('%d %f ' % (image_id, s))
-            f.write('\n')
-    for i in range(num_images):
-        if args.convert_format:
-            img = cv2.imread(os.path.join(image_dir, images[i+1].name))
-            cv2.imwrite(os.path.join(renamed_dir, '%08d.jpg' % i), img)
-        else:
-            shutil.copyfile(os.path.join(image_dir, images[i+1].name), os.path.join(renamed_dir, '%08d.jpg' % i))
+        for i in range(num_images):
+            if args.convert_format:
+                img = cv2.imread(os.path.join(image_dir, images[i + 1].name))
+                cv2.imwrite(os.path.join(renamed_dir, '%08d.jpg' % i), img)
+            else:
+                shutil.copyfile(os.path.join(image_dir, images[i + 1].name), os.path.join(renamed_dir, '%08d.jpg' % i))
+    elif args.mode == 'neus':
+        func_neus()
+    else:
+        print('Mode not set!')
+        exit(-1)

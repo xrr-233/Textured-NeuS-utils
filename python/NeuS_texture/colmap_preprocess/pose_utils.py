@@ -9,9 +9,13 @@ from colmap_wrapper import run_colmap
 import colmap_read_model as read_model
 
 
-def load_colmap_data(realdir):
+def load_colmap_data(realdir, from_mvs=False):
+    if from_mvs:
+        realdir = os.path.join(realdir)
+    else:
+        realdir = os.path.join(realdir, 'sparse', '0')
     
-    camerasfile = os.path.join(realdir, 'sparse/0/cameras.bin')
+    camerasfile = os.path.join(realdir, 'cameras.bin')
     camdata = read_model.read_cameras_binary(camerasfile)
     
     # cam = camdata[camdata.keys()[0]]
@@ -23,7 +27,7 @@ def load_colmap_data(realdir):
     # w, h, f = factor * w, factor * h, factor * f
     hwf = np.array([h,w,f]).reshape([3,1])
     
-    imagesfile = os.path.join(realdir, 'sparse/0/images.bin')
+    imagesfile = os.path.join(realdir, 'images.bin')
     imdata = read_model.read_images_binary(imagesfile)
     
     w2c_mats = []
@@ -38,18 +42,29 @@ def load_colmap_data(realdir):
         t = im.tvec.reshape([3,1])
         m = np.concatenate([np.concatenate([R, t], 1), bottom], 0)
         w2c_mats.append(m)
-    
+
+    print(w2c_mats[0])
     w2c_mats = np.stack(w2c_mats, 0)
+    print(w2c_mats.shape)
+    print(w2c_mats[0])
     c2w_mats = np.linalg.inv(w2c_mats)
+    print(c2w_mats.shape)
+    print(c2w_mats[0])
     
     poses = c2w_mats[:, :3, :4].transpose([1,2,0])
+    print(poses.shape)
+    print(poses[:, :, 0])
     poses = np.concatenate([poses, np.tile(hwf[..., np.newaxis], [1,1,poses.shape[-1]])], 1)
+    print(poses.shape)
+    print(poses[:, :, 0])
     
-    points3dfile = os.path.join(realdir, 'sparse/0/points3D.bin')
+    points3dfile = os.path.join(realdir, 'points3D.bin')
     pts3d = read_model.read_points3d_binary(points3dfile)
     
     # must switch to [-u, r, -t] from [r, -u, t], NOT [r, u, -t]
     poses = np.concatenate([poses[:, 1:2, :], poses[:, 0:1, :], -poses[:, 2:3, :], poses[:, 3:4, :], poses[:, 4:5, :]], 1)
+    print(poses.shape)
+    print(poses[:, :, 0])
     
     return poses, pts3d, perm
 
@@ -78,6 +93,8 @@ def save_poses(basedir, poses, pts3d, perm):
     poses = np.moveaxis(poses, -1, 0)
     poses = poses[perm]
     np.save(os.path.join(basedir, 'poses.npy'), poses)
+
+    return poses
 
 
 def minify_v0(basedir, factors=[], resolutions=[]):
