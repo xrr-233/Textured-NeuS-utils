@@ -12,21 +12,6 @@ from models.fields import NeRF, SDFNetwork, SingleVarianceNetwork, RenderingNetw
 from models.renderer import NeuSRenderer
 
 
-def export_o_v_point_cloud(vertices):
-    print(vertices.shape)
-    print(np.min(vertices, axis=0))
-    print(np.max(vertices, axis=0))
-
-    res = vertices
-    print(res.shape)
-    with open('points.txt', 'w') as f:
-        f.write(f"{vertices.shape[0]} \n")
-        for i in tqdm(range(res.shape[0])):
-            for j in range(res.shape[1]):
-                f.write(f"{res[i][j]} ")
-            f.write('\n')
-
-
 def RM2Euler(RM):
     theta_z = np.arctan2(RM[1][0], RM[0][0])
     theta_y = np.arctan2(-1 * RM[2][0], np.sqrt(RM[2][1] * RM[2][1] + RM[2][2] * RM[2][2]))
@@ -130,14 +115,6 @@ class Runner:
         self.focal = self.intrinsics_all[0][0, 0]
         self.pose_all = torch.stack(self.pose_all).to(self.device)  # [n_images, 4, 4]
 
-        # images_lis = sorted(glob(os.path.join('old/data/imgs', '*.png')))
-        # images_np = np.stack([cv.imread(im_name) for im_name in tqdm(images_lis)]) / 256.0
-        # self.images = images_np.astype(np.float32)  # [n_images, H, W, 3]
-        # masks_lis = sorted(glob(os.path.join('old/data/masks', '*.png')))
-        # masks_np = np.stack([cv.imread(im_name) for im_name in tqdm(masks_lis)]) / 256.0
-        # self.masks = masks_np.astype(np.float32)  # [n_images, H, W, 3]
-        # self.H, self.W = self.images.shape[1], self.images.shape[2]
-
     def load_ckpt(self, path):
         print(f'Find checkpoint: {path}')
 
@@ -148,30 +125,6 @@ class Runner:
         self.color_network.load_state_dict(checkpoint['color_network_fine'])
         self.optimizer.load_state_dict(checkpoint['optimizer'])
         self.iter_step = checkpoint['iter_step']
-
-    def load_mesh(self):
-        latest_model_name = None
-        model_list_raw = os.listdir('old/data/meshes')
-        model_list = []
-        for model_name in model_list_raw:
-            if model_name[-3:] == 'ply' and int(model_name[:-4]) <= 99999999:
-                model_list.append(model_name)
-        model_list.sort()
-
-        if (len(model_list) > 0):
-            latest_model_name = model_list[-1]
-
-        if latest_model_name is not None:
-            print(f'Find 3d model: {latest_model_name}')
-
-            self.mesh = trimesh.load(os.path.join('old/data/meshes', latest_model_name))
-            self.mesh.vertices = (self.mesh.vertices - self.scale_mats_np[0][:3, 3][None]) / self.scale_mats_np[0][0, 0]
-            self.mesh.invert()
-
-            export_o_v_point_cloud(self.mesh.vertices)
-        else:
-            logging.error('No 3d model found')
-            exit(-1)
 
     def gen_rays_at(self, img_idx, resolution_level=1):
         """
@@ -276,7 +229,7 @@ class Runner:
 #
 #     start = np.array([0, 0, 0])
 #     end = RM2EulerDeg(light_pose)
-#     os.makedirs('old/data/renderings', exist_ok=True)
+#     os.makedirs('old_data/data/renderings', exist_ok=True)
 #     for i in tqdm(range(30)):
 #         light_pose = np.copy(runner.pose_all[i])
 #         camera_pose = np.copy(runner.pose_all[i])
@@ -290,4 +243,4 @@ class Runner:
 #
 #         plt.figure(figsize=(8, 8))
 #         plt.imshow(color)
-#         plt.savefig(os.path.join('old/data/renderings', '%03d.png' % i))
+#         plt.savefig(os.path.join('old_data/data/renderings', '%03d.png' % i))

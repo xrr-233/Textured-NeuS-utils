@@ -120,29 +120,39 @@ class Dataset:
 
 
 class BlendedMVSDataset(Dataset):
-    def __init__(self, path_root):
+    def __init__(self, path_root=None):
         super().__init__()
         self.path_root = 'BlendedMVS_preprocessed'
-        self.image_dirs = []
-        for filename in os.listdir(path_root):
-            if filename.startswith('dataset') and 'res' in filename:
-                self.image_dirs.append(os.path.join(path_root, filename))
-        self.textured_mesh_dir = os.path.join(path_root, 'dataset_textured_meshes')
 
-        all_models_root = []
-        all_models = []
-        self.all_models_root = []
-        self.all_models = []
-        self.rewrite = []
-        for image_dir in self.image_dirs:
-            all_model = os.listdir(image_dir)
-            all_models_root.extend(image_dir for _ in range(len(all_model)))
-            all_models.extend(all_model)
-        for filename in os.listdir(self.textured_mesh_dir):
-            if filename in all_models:
-                self.all_models_root.append(all_models_root[all_models.index(filename)])
-                self.all_models.append(filename)
-                self.rewrite.append(False)
+        if path_root is not None:
+            self.from_external = True
+
+            self.image_dirs = []
+            image_dirs_full_res = []
+            image_dirs_low_res = []
+            for filename in os.listdir(path_root):
+                if filename.startswith('dataset_full_res'):
+                    image_dirs_full_res.append(os.path.join(path_root, filename))
+                elif filename.startswith('dataset_low_res'):
+                    image_dirs_low_res.append(os.path.join(path_root, filename))
+            self.image_dirs.extend(image_dirs_full_res)
+            self.image_dirs.extend(image_dirs_low_res)
+            self.textured_mesh_dir = os.path.join(path_root, 'dataset_textured_meshes')
+
+            self.all_models_root = []
+            self.all_models = []
+            self.rewrite = []
+            textured_mesh_dir = os.listdir(self.textured_mesh_dir)
+            for image_dir in self.image_dirs:
+                all_model = os.listdir(image_dir)
+                for filename in all_model:
+                    if filename not in self.all_models and filename in textured_mesh_dir:
+                        self.all_models_root.append(image_dir)
+                        self.all_models.append(filename)
+                        self.rewrite.append(False)
+        else:
+            self.from_external = False
+
 
     def __len__(self):
         return len(self.all_models)
@@ -201,129 +211,99 @@ class BlendedMVSDataset(Dataset):
 
         self.load_camera_parameters(os.path.join(self.get_single_model_path_root(identifier)))
 
-    def export_bundler_out(self, dst_root):
-        with open(os.path.join(dst_root, 'meshlab_camera.out'), 'w') as f:
-            f.write('# Bundle file v0.3\n')
-            f.write(f'{self.n_images} 0\n')
-            for i in range(self.n_images):
-                f.write('%.6f %.6f %.6f\n' % (
-                    self.camera_intrinsics[i][0, 0],
-                    self.camera_intrinsics[i][0, 2],
-                    self.camera_intrinsics[i][1, 2]
-                ))
-                f.write('%.6f %.6f %.6f\n' % (
-                    self.camera_extrinsics[i][0, 0],
-                    self.camera_extrinsics[i][0, 1],
-                    self.camera_extrinsics[i][0, 2]
-                ))
-                f.write('%.6f %.6f %.6f\n' % (
-                    self.camera_extrinsics[i][1, 0],
-                    self.camera_extrinsics[i][1, 1],
-                    self.camera_extrinsics[i][1, 2]
-                ))
-                f.write('%.6f %.6f %.6f\n' % (
-                    self.camera_extrinsics[i][2, 0],
-                    self.camera_extrinsics[i][2, 1],
-                    self.camera_extrinsics[i][2, 2]
-                ))
-                f.write('%.6f %.6f %.6f\n' % (
-                    self.camera_extrinsics[i][0, 3],
-                    self.camera_extrinsics[i][1, 3],
-                    self.camera_extrinsics[i][2, 3]
-                ))
-
     def preprocess_dataset(self):
-        # device = o3d.core.Device("CPU:0")
-        os.makedirs(self.path_root, exist_ok=True)
+        if self.from_external:
+            # device = o3d.core.Device("CPU:0")
+            os.makedirs(self.path_root, exist_ok=True)
 
-        for i in tqdm(range(self.__len__())):
-            filename_root = self.all_models_root[i]
-            filename = self.all_models[i]
+            for i in tqdm(range(self.__len__())):
+                filename_root = self.all_models_root[i]
+                filename = self.all_models[i]
 
-            if self.rewrite[i]:
-                if os.path.exists(f'{self.path_root}/{filename}'):
-                    shutil.rmtree(f'{self.path_root}/{filename}')
-            if not os.path.exists(f'{self.path_root}/{filename}'):
-                os.makedirs(f'{self.path_root}/{filename}', exist_ok=True)
-                os.makedirs(f'{self.path_root}/{filename}/image', exist_ok=True)
-                os.makedirs(f'{self.path_root}/{filename}/image_mesh', exist_ok=True)
-                os.makedirs(f'{self.path_root}/{filename}/mask', exist_ok=True)
+                if self.rewrite[i]:
+                    if os.path.exists(f'{self.path_root}/{filename}'):
+                        shutil.rmtree(f'{self.path_root}/{filename}')
+                if not os.path.exists(f'{self.path_root}/{filename}'):
+                    os.makedirs(f'{self.path_root}/{filename}', exist_ok=True)
+                    os.makedirs(f'{self.path_root}/{filename}/image', exist_ok=True)
+                    os.makedirs(f'{self.path_root}/{filename}/image_mesh', exist_ok=True)
+                    os.makedirs(f'{self.path_root}/{filename}/mask', exist_ok=True)
+                    shutil.copytree(os.path.join(self.textured_mesh_dir, filename, 'textured_mesh'),
+                                    os.path.join(self.path_root, filename, 'textured_mesh'))
 
-                # region Process image
-                if 'full' in filename_root:
-                    filename_root = os.path.join(filename_root, filename, filename, filename)
-                elif 'low' in filename_root:
-                    filename_root = os.path.join(filename_root, filename)
-                src_root = os.path.join(filename_root, 'blended_images')
-                dst_root = f'{self.path_root}/{filename}'
-                for index, file in enumerate(os.listdir(src_root)):
-                    img = cv2.imread(os.path.join(src_root, file))
-                    cv2.imwrite(os.path.join(dst_root, 'image', '{:0>3d}.png'.format(index)), img)
-                    cv2.imwrite(os.path.join(dst_root, 'mask', '{:0>3d}.png'.format(index)), np.ones_like(img) * 255)
-                # endregion
+                    # region Process image
+                    if 'full' in filename_root:
+                        filename_root = os.path.join(filename_root, filename, filename, filename)
+                    elif 'low' in filename_root:
+                        filename_root = os.path.join(filename_root, filename)
+                    src_root = os.path.join(filename_root, 'blended_images')
+                    dst_root = f'{self.path_root}/{filename}'
+                    for index, file in enumerate(os.listdir(src_root)):
+                        img = cv2.imread(os.path.join(src_root, file))
+                        cv2.imwrite(os.path.join(dst_root, 'image', '{:0>3d}.png'.format(index)), img)
+                        cv2.imwrite(os.path.join(dst_root, 'mask', '{:0>3d}.png'.format(index)), np.ones_like(img) * 255)
+                    # endregion
 
-                # region Process camera_sphere.npz
-                src_root = os.path.join(filename_root, 'cams')
-                cam_dict = dict()
-                self.camera_extrinsics = []
-                self.camera_intrinsics = []
-                for index, file in enumerate(os.listdir(src_root)):
-                    if file == 'pair.txt':
-                        continue
-                    with open(os.path.join(src_root, file), 'r') as f:
-                        all_lines = f.readlines()
-                        row_1 = all_lines[1].split(' ')[:4]
-                        row_2 = all_lines[2].split(' ')[:4]
-                        row_3 = all_lines[3].split(' ')[:4]
-                        row_4 = all_lines[4].split(' ')[:4]
-                        extrinsic = np.linalg.inv(np.array([row_1, row_2, row_3, row_4], dtype=np.float32))
-                        self.camera_extrinsics.append(extrinsic)
-                        row_1 = all_lines[7].split(' ')[:3]
-                        row_1.append('0')
-                        row_2 = all_lines[8].split(' ')[:3]
-                        row_2.append('0')
-                        row_3 = all_lines[9].split(' ')[:3]
-                        row_3.append('0')
-                        row_4 = ['0', '0', '0', '1']
-                        intrinsic = np.array([row_1, row_2, row_3, row_4], dtype=np.float32)
-                        self.camera_intrinsics.append(intrinsic[:3, :3])
-                    w2c = np.linalg.inv(extrinsic)
-                    world_mat = intrinsic @ w2c
-                    world_mat = world_mat.astype(np.float32)
-                    cam_dict['camera_mat_{}'.format(index)] = intrinsic
-                    cam_dict['camera_mat_inv_{}'.format(index)] = np.linalg.inv(intrinsic)
-                    cam_dict['world_mat_{}'.format(index)] = world_mat
-                    cam_dict['world_mat_inv_{}'.format(index)] = np.linalg.inv(world_mat)
+                    # region Process camera_sphere.npz
+                    src_root = os.path.join(filename_root, 'cams')
+                    cam_dict = dict()
+                    self.camera_extrinsics = []
+                    self.camera_intrinsics = []
+                    for index, file in enumerate(os.listdir(src_root)):
+                        if file == 'pair.txt':
+                            continue
+                        with open(os.path.join(src_root, file), 'r') as f:
+                            all_lines = f.readlines()
+                            row_1 = all_lines[1].split(' ')[:4]
+                            row_2 = all_lines[2].split(' ')[:4]
+                            row_3 = all_lines[3].split(' ')[:4]
+                            row_4 = all_lines[4].split(' ')[:4]
+                            extrinsic = np.linalg.inv(np.array([row_1, row_2, row_3, row_4], dtype=np.float32))
+                            self.camera_extrinsics.append(extrinsic)
+                            row_1 = all_lines[7].split(' ')[:3]
+                            row_1.append('0')
+                            row_2 = all_lines[8].split(' ')[:3]
+                            row_2.append('0')
+                            row_3 = all_lines[9].split(' ')[:3]
+                            row_3.append('0')
+                            row_4 = ['0', '0', '0', '1']
+                            intrinsic = np.array([row_1, row_2, row_3, row_4], dtype=np.float32)
+                            self.camera_intrinsics.append(intrinsic[:3, :3])
+                        w2c = np.linalg.inv(extrinsic)
+                        world_mat = intrinsic @ w2c
+                        world_mat = world_mat.astype(np.float32)
+                        cam_dict['camera_mat_{}'.format(index)] = intrinsic
+                        cam_dict['camera_mat_inv_{}'.format(index)] = np.linalg.inv(intrinsic)
+                        cam_dict['world_mat_{}'.format(index)] = world_mat
+                        cam_dict['world_mat_inv_{}'.format(index)] = np.linalg.inv(world_mat)
 
-                src_root = os.path.join(self.textured_mesh_dir, filename, 'textured_mesh')
-                vertices = []
-                for f in os.listdir(src_root):
-                    if f.endswith('.obj'):
-                        mesh = o3d.io.read_triangle_mesh(os.path.join(src_root, f), True)
-                        # mesh.compute_vertex_normals()  # allow light effect
-                        vertices.append(np.asarray(mesh.vertices))
-                vertices = np.concatenate(vertices, axis=0)
-                bbox_max = np.max(vertices, axis=0)
-                bbox_min = np.min(vertices, axis=0)
-                center = (bbox_max + bbox_min) * 0.5
-                radius = np.linalg.norm(vertices - center, ord=2, axis=-1).max()
-                scale_mat = np.diag([radius, radius, radius, 1.0]).astype(np.float32)
-                scale_mat[:3, 3] = center
-                self.n_images = len(self.camera_extrinsics)
-                for i in range(self.n_images):
-                    cam_dict['scale_mat_{}'.format(i)] = scale_mat
-                    cam_dict['scale_mat_inv_{}'.format(i)] = np.linalg.inv(scale_mat)
-                np.savez(os.path.join(dst_root, 'cameras_sphere.npz'), **cam_dict)
-                # endregion
+                    src_root = os.path.join(self.textured_mesh_dir, filename, 'textured_mesh')
+                    vertices = []
+                    for f in os.listdir(src_root):
+                        if f.endswith('.obj'):
+                            mesh = o3d.io.read_triangle_mesh(os.path.join(src_root, f), True)
+                            # mesh.compute_vertex_normals()  # allow light effect
+                            vertices.append(np.asarray(mesh.vertices))
+                    vertices = np.concatenate(vertices, axis=0)
+                    bbox_max = np.max(vertices, axis=0)
+                    bbox_min = np.min(vertices, axis=0)
+                    center = (bbox_max + bbox_min) * 0.5
+                    radius = np.linalg.norm(vertices - center, ord=2, axis=-1).max()
+                    scale_mat = np.diag([radius, radius, radius, 1.0]).astype(np.float32)
+                    scale_mat[:3, 3] = center
+                    self.n_images = len(self.camera_extrinsics)
+                    for i in range(self.n_images):
+                        cam_dict['scale_mat_{}'.format(i)] = scale_mat
+                        cam_dict['scale_mat_inv_{}'.format(i)] = np.linalg.inv(scale_mat)
+                    np.savez(os.path.join(dst_root, 'cameras_sphere.npz'), **cam_dict)
+                    # endregion
 
-                # region Generate bundler .out
-                self.export_bundler_out(dst_root)
-                # endregion
-
-                # region Process image_mesh
-                self.load_single_model(filename)
-                self.generate_baseline_rendered_mesh(save_path=dst_root)
-                # endregion
+                    # region Process image_mesh
+                    self.load_single_model(filename)
+                    self.generate_baseline_rendered_mesh(save_path=dst_root)
+                    # endregion
+        else:
+            pass
 
 
 class DTUDataset(Dataset):
@@ -763,7 +743,7 @@ def get_blended_mvs_dataset_pair(usb_path, bmvs_model_name, processed_model_name
     """
     baseline_dataset = BlendedMVSDataset(usb_path)
     if rewrite:
-        baseline_dataset.set_rewrite(bmvs_model_name)
+        baseline_dataset.rewrite_all()
     baseline_dataset.preprocess_dataset()
     baseline_dataset.load_single_model(bmvs_model_name)
 
@@ -820,13 +800,10 @@ def visualize_extrinsic(dataset, radius, height):
 
 
 if __name__ == '__main__':
-    # baseline_dataset, processed_dataset = get_blended_mvs_dataset_pair('E:/bmvs', '5a7d3db14989e929563eb153', 'bmvs_dog')
-    baseline_dataset = BlendedMVSDataset('E:/bmvs')
-    baseline_dataset.preprocess_dataset()
-    baseline_dataset.load_single_model('bmvs_dog2')
+    baseline_dataset, processed_dataset = get_blended_mvs_dataset_pair(
+        'E:/bmvs', '5c1af2e2bee9a723c963d019', 'bmvs_dog/preprocessed')
     visualize_extrinsic(baseline_dataset, radius=0.02, height=0.04)
-    baseline_dataset.load_single_model('5c1af2e2bee9a723c963d019')
-    visualize_extrinsic(baseline_dataset, radius=0.02, height=0.04)
+    visualize_extrinsic(processed_dataset, radius=0.02, height=0.04)
 
     metrics = Metrics('TexturedNeUSDataset_processed/scan1',
                       'DTUDataset_preprocessed/scan1')

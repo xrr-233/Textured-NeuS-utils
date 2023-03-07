@@ -11,3 +11,4 @@ torch
 scipy
 PyMCubes
 matplotlib
+tensorboard
