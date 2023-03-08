@@ -22,6 +22,7 @@ class Dataset:
         """
         applicable only for ONE SINGLE SOLE model
         """
+        self.identifier = None
         self.n_images = 0
         self.W = 0
         self.H = 0
@@ -125,6 +126,7 @@ class BlendedMVSDataset(Dataset):
         self.path_root = 'BlendedMVS_preprocessed'
 
         if path_root is not None:
+            print('Load from external...')
             self.from_external = True
 
             self.image_dirs = []
@@ -151,8 +153,10 @@ class BlendedMVSDataset(Dataset):
                         self.all_models.append(filename)
                         self.rewrite.append(False)
         else:
+            print('Load from local files...')
             self.from_external = False
 
+            self.all_models = os.listdir(self.path_root)
 
     def __len__(self):
         return len(self.all_models)
@@ -171,17 +175,30 @@ class BlendedMVSDataset(Dataset):
                 print('idx exceeds max model number!')
                 exit(-1)
 
-    def set_rewrite(self, identifier):
-        if type(identifier) == str:
-            if identifier in self.all_models:
-                self.rewrite[self.all_models.index(identifier)] = True
-        else:
-            if identifier < self.__len__():
-                self.rewrite[identifier] = True
+    def set_rewrite(self, identifier=None):
+        """
 
-    def rewrite_all(self):
-        for i in range(len(self.rewrite)):
-            self.rewrite[i] = True
+        :param identifier: -1 for all
+        :return:
+        """
+        if self.from_external:
+            if type(identifier) == str:
+                if identifier in self.all_models:
+                    self.rewrite[self.all_models.index(identifier)] = True
+                else:
+                    print('model not found!')
+                    exit(-1)
+            elif type(identifier) == int:
+                if identifier == -1:
+                    for i in range(len(self.rewrite)):
+                        self.rewrite[i] = True
+                elif identifier < self.__len__():
+                    self.rewrite[identifier] = True
+                else:
+                    print('idx exceeds max model number!')
+                    exit(-1)
+        else:
+            print('Current dataset is loaded locally and cannot be rewritten.')
 
     def load_single_model(self, identifier):
         """加载单个模型
@@ -191,25 +208,15 @@ class BlendedMVSDataset(Dataset):
         :param identifier: 指定3D模型用
         :return:
         """
-        filename = None
-        if type(identifier) == str:
-            filename = identifier
-        else:
-            if identifier < self.__len__():
-                filename = self.all_models[identifier]
-            else:
-                print('idx exceeds max model number!')
-                exit(-1)
-
-        textured_mesh_path = os.path.join(self.textured_mesh_dir, filename, 'textured_mesh')
+        self.identifier = self.get_single_model_path_root(identifier)
+        textured_mesh_path = os.path.join(self.identifier, 'textured_mesh')
         self.meshes = []
         for f in os.listdir(textured_mesh_path):
             if f.endswith('.obj'):
                 mesh = o3d.io.read_triangle_mesh(os.path.join(textured_mesh_path, f), True)
                 mesh.compute_vertex_normals()  # allow light effect
                 self.meshes.append(mesh)
-
-        self.load_camera_parameters(os.path.join(self.get_single_model_path_root(identifier)))
+        self.load_camera_parameters(self.identifier)
 
     def preprocess_dataset(self):
         if self.from_external:
@@ -302,21 +309,29 @@ class BlendedMVSDataset(Dataset):
                     self.load_single_model(filename)
                     self.generate_baseline_rendered_mesh(save_path=dst_root)
                     # endregion
-        else:
-            pass
 
 
 class DTUDataset(Dataset):
-    def __init__(self, path_root):
+    def __init__(self, path_root=None):
         super().__init__()
         self.path_root = 'DTUDataset_preprocessed'
-        self.all_models_root = os.path.join(path_root, './SampleSet/MVS Data')
-        self.all_models = []
-        self.rewrite = []
 
-        for folder in os.listdir(os.path.join(self.all_models_root, 'Rectified')):
-            self.all_models.append(folder)
-            self.rewrite.append(False)
+        if path_root is not None:
+            print('Load from external...')
+            self.from_external = True
+
+            self.all_models_root = os.path.join(path_root, './SampleSet/MVS Data')
+            self.all_models = []
+            self.rewrite = []
+
+            for folder in os.listdir(os.path.join(self.all_models_root, 'Rectified')):
+                self.all_models.append(folder)
+                self.rewrite.append(False)
+        else:
+            print('Load from local files...')
+            self.from_external = False
+
+            self.all_models = os.listdir(self.path_root)
 
     def __len__(self):
         return len(self.all_models)
@@ -335,17 +350,30 @@ class DTUDataset(Dataset):
                 print('idx exceeds max model number!')
                 exit(-1)
 
-    def set_rewrite(self, identifier):
-        if type(identifier) == str:
-            if identifier in self.all_models:
-                self.rewrite[self.all_models.index(identifier)] = True
-        else:
-            if identifier < self.__len__():
-                self.rewrite[identifier] = True
+    def set_rewrite(self, identifier=None):
+        """
 
-    def rewrite_all(self):
-        for i in range(len(self.rewrite)):
-            self.rewrite[i] = True
+        :param identifier: -1 for all
+        :return:
+        """
+        if self.from_external:
+            if type(identifier) == str:
+                if identifier in self.all_models:
+                    self.rewrite[self.all_models.index(identifier)] = True
+                else:
+                    print('model not found!')
+                    exit(-1)
+            elif type(identifier) == int:
+                if identifier == -1:
+                    for i in range(len(self.rewrite)):
+                        self.rewrite[i] = True
+                elif identifier < self.__len__():
+                    self.rewrite[identifier] = True
+                else:
+                    print('idx exceeds max model number!')
+                    exit(-1)
+        else:
+            print('Current dataset is loaded locally and cannot be rewritten.')
 
     def load_single_model(self, identifier):
         """加载单个模型
@@ -355,139 +383,107 @@ class DTUDataset(Dataset):
         :param identifier: 指定3D模型用
         :return:
         """
-        filename = None
-        if type(identifier) == str:
-            filename = identifier
-        else:
-            if identifier < self.__len__():
-                filename = self.all_models[identifier]
-            else:
-                print('idx exceeds max model number!')
-                exit(-1)
-
-        self.meshes = [o3d.io.read_triangle_mesh(os.path.join(self.path_root, filename, 'textured_mesh.ply'), True)]
+        self.identifier = self.get_single_model_path_root(identifier)
+        self.meshes = [o3d.io.read_triangle_mesh(os.path.join(self.identifier, 'textured_mesh.ply'), True)]
         self.meshes[0].compute_vertex_normals()  # allow light effect
-        self.load_camera_parameters(os.path.join(self.get_single_model_path_root(identifier)))
+        self.load_camera_parameters(os.path.join(self.identifier))
 
     def preprocess_dataset(self):
-        os.makedirs(self.path_root, exist_ok=True)
-
-        for i in tqdm(range(self.__len__())):
-            filename = self.all_models[i]
-
-            if self.rewrite[i]:
-                if os.path.exists(f'{self.path_root}/{filename}'):
-                    shutil.rmtree(f'{self.path_root}/{filename}')
-            if not os.path.exists(f'{self.path_root}/{filename}'):
-                os.makedirs(f'{self.path_root}/{filename}', exist_ok=True)
-                os.makedirs(f'{self.path_root}/{filename}/image', exist_ok=True)
-                os.makedirs(f'{self.path_root}/{filename}/image_mesh', exist_ok=True)
-                os.makedirs(f'{self.path_root}/{filename}/mask', exist_ok=True)
-
-                # region Process image
-                src_root = os.path.join(self.all_models_root, 'Rectified', filename)
-                dst_root = f'{self.path_root}/{filename}'
-                index = 0
-                for file in os.listdir(src_root):
-                    if file.endswith('max.png'):
-                        img = cv2.imread(os.path.join(src_root, file))
-                        cv2.imwrite(os.path.join(dst_root, 'image', '{:0>3d}.png'.format(index)), img)
-                        cv2.imwrite(os.path.join(dst_root, 'mask', '{:0>3d}.png'.format(index)), np.ones_like(img) * 255)
-                        index += 1
-                # endregion
-
-                # region Process camera_sphere.npz
-                src_root = os.path.join(self.all_models_root, 'Calibration', 'cal18')
-                cam_dict = dict()
-                self.camera_extrinsics = []
-                self.camera_intrinsics = []
-                index = 0
-                for file in os.listdir(src_root):
-                    if file.endswith('.txt'):
-                        world_mat = np.zeros((3, 4), dtype=np.float32)
-                        with open(os.path.join(src_root, file), 'r') as f:
-                            all_lines = f.readlines()
-                            for i, line in enumerate(all_lines):
-                                elements = line.split(' ')
-                                if len(elements) > 0:
-                                    for j in range(4):
-                                        world_mat[i, j] = float(elements[j])
-                            intrinsic, pose = load_K_Rt_from_P(None, world_mat)
-                            self.camera_extrinsics.append(pose)
-                            self.camera_intrinsics.append(intrinsic[:3, :3])
-                        world_mat = np.concatenate([world_mat, np.array([0, 0, 0, 1]).reshape(1, 4)], axis=0)
-                        cam_dict['camera_mat_{}'.format(index)] = intrinsic
-                        cam_dict['camera_mat_inv_{}'.format(index)] = np.linalg.inv(intrinsic)
-                        cam_dict['world_mat_{}'.format(index)] = world_mat
-                        cam_dict['world_mat_inv_{}'.format(index)] = np.linalg.inv(world_mat)
-                        index += 1
-
-                src_root = os.path.join(self.all_models_root, 'Surfaces', 'camp')
-                vertices = []
-                for f in os.listdir(src_root):
-                    if int(f[4:7]) == int(filename[4:]):
-                        shutil.copy(os.path.join(src_root, f),
-                                    os.path.join(self.path_root, filename, 'textured_mesh.ply'))
-                        mesh = o3d.io.read_triangle_mesh(os.path.join(src_root, f), True)
-                        mesh.compute_vertex_normals()  # allow light effect
-                        vertices.append(np.asarray(mesh.vertices))
-                vertices = np.concatenate(vertices, axis=0)
-                bbox_max = np.max(vertices, axis=0)
-                bbox_min = np.min(vertices, axis=0)
-                center = (bbox_max + bbox_min) * 0.5
-                radius = np.linalg.norm(vertices - center, ord=2, axis=-1).max()
-                scale_mat = np.diag([radius, radius, radius, 1.0]).astype(np.float32)
-                scale_mat[:3, 3] = center
-                self.n_images = len(self.camera_extrinsics)
-                for i in range(self.n_images):
-                    cam_dict['scale_mat_{}'.format(i)] = scale_mat
-                    cam_dict['scale_mat_inv_{}'.format(i)] = np.linalg.inv(scale_mat)
-                np.savez(os.path.join(dst_root, 'cameras_sphere.npz'), **cam_dict)
-                # endregion
-
-                # region Process image_mesh
-                self.load_single_model(filename)
-                self.generate_baseline_rendered_mesh(save_path=dst_root)
-                # endregion
-
-
-class SelfDataset(Dataset):
-    def __init__(self, path_public, path_exp):
-        super().__init__()
-        self.path_root = 'SelfDataset_preprocessed'
-        self.path_public = path_public
-        self.path_exp = path_exp
-
-    def load_model(self):
-        self.meshes = [o3d.io.read_triangle_mesh(os.path.join(self.path_root, 'textured_mesh.ply'), True)]
-
-    def preprocess_dataset(self, rewrite=False):
-        if rewrite:
-            shutil.rmtree(self.path_root)
-        if not os.path.exists(self.path_root):
+        if self.from_external:
             os.makedirs(self.path_root, exist_ok=True)
-            shutil.copytree(os.path.join(self.path_public, 'image'),
-                            os.path.join(self.path_root, 'image'))
-            shutil.copytree(os.path.join(self.path_public, 'mask'),
-                            os.path.join(self.path_root, 'mask'))
-            shutil.copy(os.path.join(self.path_public, 'cameras_sphere.npz'),
-                        os.path.join(self.path_root, 'cameras_sphere.npz'))
-            shutil.copy(os.path.join(self.path_exp, 'womask_sphere', 'meshes', 'vertex_color.ply'),
-                        os.path.join(self.path_root, 'textured_mesh.ply'))
 
-            # region Process mesh
-            os.makedirs(os.path.join(self.path_root, 'image_mesh'), exist_ok=True)
-            self.load_model()
-            self.generate_baseline_rendered_mesh(save_path=self.path_root)
-            # endregion
-        self.load_camera_parameters(self.path_root)
+            for i in tqdm(range(self.__len__())):
+                filename = self.all_models[i]
+
+                if self.rewrite[i]:
+                    if os.path.exists(f'{self.path_root}/{filename}'):
+                        shutil.rmtree(f'{self.path_root}/{filename}')
+                if not os.path.exists(f'{self.path_root}/{filename}'):
+                    os.makedirs(f'{self.path_root}/{filename}', exist_ok=True)
+                    os.makedirs(f'{self.path_root}/{filename}/image', exist_ok=True)
+                    os.makedirs(f'{self.path_root}/{filename}/image_mesh', exist_ok=True)
+                    os.makedirs(f'{self.path_root}/{filename}/mask', exist_ok=True)
+
+                    # region Process image
+                    src_root = os.path.join(self.all_models_root, 'Rectified', filename)
+                    dst_root = f'{self.path_root}/{filename}'
+                    index = 0
+                    for file in os.listdir(src_root):
+                        if file.endswith('max.png'):
+                            img = cv2.imread(os.path.join(src_root, file))
+                            cv2.imwrite(os.path.join(dst_root, 'image', '{:0>3d}.png'.format(index)), img)
+                            cv2.imwrite(os.path.join(dst_root, 'mask', '{:0>3d}.png'.format(index)), np.ones_like(img) * 255)
+                            index += 1
+                    # endregion
+
+                    # region Process camera_sphere.npz
+                    src_root = os.path.join(self.all_models_root, 'Calibration', 'cal18')
+                    cam_dict = dict()
+                    self.camera_extrinsics = []
+                    self.camera_intrinsics = []
+                    index = 0
+                    for file in os.listdir(src_root):
+                        if file.endswith('.txt'):
+                            world_mat = np.zeros((3, 4), dtype=np.float32)
+                            with open(os.path.join(src_root, file), 'r') as f:
+                                all_lines = f.readlines()
+                                for i, line in enumerate(all_lines):
+                                    elements = line.split(' ')
+                                    if len(elements) > 0:
+                                        for j in range(4):
+                                            world_mat[i, j] = float(elements[j])
+                                intrinsic, pose = load_K_Rt_from_P(None, world_mat)
+                                self.camera_extrinsics.append(pose)
+                                self.camera_intrinsics.append(intrinsic[:3, :3])
+                            world_mat = np.concatenate([world_mat, np.array([0, 0, 0, 1]).reshape(1, 4)], axis=0)
+                            cam_dict['camera_mat_{}'.format(index)] = intrinsic
+                            cam_dict['camera_mat_inv_{}'.format(index)] = np.linalg.inv(intrinsic)
+                            cam_dict['world_mat_{}'.format(index)] = world_mat
+                            cam_dict['world_mat_inv_{}'.format(index)] = np.linalg.inv(world_mat)
+                            index += 1
+
+                    src_root = os.path.join(self.all_models_root, 'Surfaces', 'camp')
+                    vertices = []
+                    for f in os.listdir(src_root):
+                        if int(f[4:7]) == int(filename[4:]):
+                            shutil.copy(os.path.join(src_root, f),
+                                        os.path.join(self.path_root, filename, 'textured_mesh.ply'))
+                            mesh = o3d.io.read_triangle_mesh(os.path.join(src_root, f), True)
+                            mesh.compute_vertex_normals()  # allow light effect
+                            vertices.append(np.asarray(mesh.vertices))
+                    vertices = np.concatenate(vertices, axis=0)
+                    bbox_max = np.max(vertices, axis=0)
+                    bbox_min = np.min(vertices, axis=0)
+                    center = (bbox_max + bbox_min) * 0.5
+                    radius = np.linalg.norm(vertices - center, ord=2, axis=-1).max()
+                    scale_mat = np.diag([radius, radius, radius, 1.0]).astype(np.float32)
+                    scale_mat[:3, 3] = center
+                    self.n_images = len(self.camera_extrinsics)
+                    for i in range(self.n_images):
+                        cam_dict['scale_mat_{}'.format(i)] = scale_mat
+                        cam_dict['scale_mat_inv_{}'.format(i)] = np.linalg.inv(scale_mat)
+                    np.savez(os.path.join(dst_root, 'cameras_sphere.npz'), **cam_dict)
+                    # endregion
+
+                    # region Process image_mesh
+                    self.load_single_model(filename)
+                    self.generate_baseline_rendered_mesh(save_path=dst_root)
+                    # endregion
 
 
-class TexturedNeUSDataset(Dataset):
-    def __init__(self, path_root):
+class TexturedNeuSDataset(Dataset):
+    def __init__(self, path_root=None):
         super().__init__()
         self.path_root = 'TexturedNeUSDataset_processed'
-        self.all_models_root = path_root
+
+        if path_root is not None:
+            print('Load from external...')
+            self.from_external = True
+
+            self.all_models_root = path_root
+        else:
+            print('Load from local files...')
+            self.from_external = False
 
     def get_single_model_path_root(self, identifier):
         if os.path.exists(os.path.join(self.path_root, identifier)):
@@ -497,75 +493,83 @@ class TexturedNeUSDataset(Dataset):
             exit(-1)
 
     def load_model(self, identifier):
-        self.meshes = [o3d.io.read_triangle_mesh(os.path.join(self.path_root, identifier, 'textured_mesh.ply'), True)]
+        self.identifier = self.get_single_model_path_root(identifier)
+        self.meshes = [o3d.io.read_triangle_mesh(os.path.join(self.identifier, 'textured_mesh.ply'), True)]
+        self.meshes[0].compute_vertex_normals()  # allow light effect
+        self.load_camera_parameters(os.path.join(self.identifier))
 
     def process_dataset(self, identifier, rewrite=False):
         """
+        By identifying the identifier, the function will fetch the result of Textured-NeuS given the project path of
+        it.
+
+        Prerequisite: the identifier path must exist under both 'public_data' and 'exp' folder, i.e. the training
+        result must be exported.
 
         :param identifier: can only be type(str), int is not applicable
         :param rewrite:
         :return:
         """
-        path_public = os.path.join(self.all_models_root, 'public_data', identifier)
-        path_exp = os.path.join(self.all_models_root, 'exp', identifier)
-        if rewrite and os.path.exists(os.path.join(self.path_root, identifier)):
-            shutil.rmtree(os.path.join(self.path_root, identifier))
-        if not os.path.exists(os.path.join(self.path_root, identifier)) and os.path.exists(path_public):
-            os.makedirs(os.path.join(self.path_root, identifier), exist_ok=True)
+        if self.from_external:
+            path_public = os.path.join(self.all_models_root, 'public_data', identifier)
+            path_exp = os.path.join(self.all_models_root, 'exp', identifier)
+            if rewrite and os.path.exists(os.path.join(self.path_root, identifier)):
+                shutil.rmtree(os.path.join(self.path_root, identifier))
+            if not os.path.exists(os.path.join(self.path_root, identifier)) and os.path.exists(path_public):
+                os.makedirs(os.path.join(self.path_root, identifier), exist_ok=True)
 
-            # region Process checkpoint
-            model_list_raw = os.listdir(os.path.join(path_exp, 'womask_sphere', 'checkpoints'))
-            model_list = []
-            for model_name in model_list_raw:
-                if model_name[-3:] == 'pth':
-                    model_list.append(model_name)
-            model_list.sort()
-            latest_model_name = model_list[-1]
-            shutil.copy(os.path.join(path_exp, 'womask_sphere', 'checkpoints', latest_model_name),
-                        os.path.join(self.path_root, identifier, 'ckpt.pth'))
-            # endregion
+                # region Process checkpoint
+                model_list_raw = os.listdir(os.path.join(path_exp, 'womask_sphere', 'checkpoints'))
+                model_list = []
+                for model_name in model_list_raw:
+                    if model_name[-3:] == 'pth':
+                        model_list.append(model_name)
+                model_list.sort()
+                latest_model_name = model_list[-1]
+                shutil.copy(os.path.join(path_exp, 'womask_sphere', 'checkpoints', latest_model_name),
+                            os.path.join(self.path_root, identifier, 'ckpt.pth'))
+                # endregion
 
-            # region Process cameras_sphere.npz
-            shutil.copy(os.path.join(path_public, 'cameras_sphere.npz'),
-                        os.path.join(self.path_root, identifier, 'cameras_sphere.npz'))
-            # endregion
+                # region Process cameras_sphere.npz
+                shutil.copy(os.path.join(path_public, 'cameras_sphere.npz'),
+                            os.path.join(self.path_root, identifier, 'cameras_sphere.npz'))
+                # endregion
 
-            # region Process image
-            # 由于在本机渲染过于慢，请手动在高配GPU服务器上高batch训练
-            os.makedirs(os.path.join(self.path_root, identifier, 'image'), exist_ok=True)
-            self.load_camera_parameters(path_public)
-            '''
-            self.runner = Runner('', self.n_images, self.W, self.H)
-            self.runner.load_camera_params(os.path.join(self.path_root, 'cameras_sphere.npz'))
-            self.runner.load_ckpt(os.path.join(self.path_root, 'ckpt.pth'))
-            self.runner.validate_image(save_path=self.path_root)
-            '''
-            # endregion
+                # region Process image
+                # 由于在本机渲染过于慢，请手动在高配GPU服务器上高batch训练
+                os.makedirs(os.path.join(self.path_root, identifier, 'image'), exist_ok=True)
+                self.load_camera_parameters(path_public)
+                '''
+                self.runner = Runner('', self.n_images, self.W, self.H)
+                self.runner.load_camera_params(os.path.join(self.path_root, 'cameras_sphere.npz'))
+                self.runner.load_ckpt(os.path.join(self.path_root, 'ckpt.pth'))
+                self.runner.validate_image(save_path=self.path_root)
+                '''
+                # endregion
 
-            # region Process mesh
-            shutil.copy(os.path.join(path_exp, 'womask_sphere', 'meshes', 'vertex_color.ply'),
-                        os.path.join(self.path_root, identifier, 'textured_mesh.ply'))
-            os.makedirs(os.path.join(self.path_root, identifier, 'image_mesh'), exist_ok=True)
-            self.load_model(identifier)
-            self.generate_baseline_rendered_mesh(save_path=os.path.join(self.path_root, identifier))
-            # endregion
-        self.load_camera_parameters(os.path.join(self.path_root, identifier))
+                # region Process mesh
+                shutil.copy(os.path.join(path_exp, 'womask_sphere', 'meshes', 'vertex_color.ply'),
+                            os.path.join(self.path_root, identifier, 'textured_mesh.ply'))
+                os.makedirs(os.path.join(self.path_root, identifier, 'image_mesh'), exist_ok=True)
+                self.load_model(identifier)
+                self.generate_baseline_rendered_mesh(save_path=os.path.join(self.path_root, identifier))
+                # endregion
 
 
 class Metrics:
-    def __init__(self, baseline_path, actual_path):
-        self.baseline_path = baseline_path
-        self.actual_path = actual_path
+    def __init__(self, baseline_dataset: Dataset, processed_dataset: Dataset):
+        self.baseline_dataset = baseline_dataset
+        self.processed_dataset = processed_dataset
 
-        camera_dict = np.load(os.path.join(baseline_path, 'cameras_sphere.npz'))
+        camera_dict = np.load(os.path.join(baseline_dataset.identifier, 'cameras_sphere.npz'))
         self.scale_mat = camera_dict['scale_mat_0'].astype(np.float32)
 
     def check_image_dir(self, target):
         if not target == 'image' and not target == 'image_mesh':
             print('Parameter "target" only accepts "image" or "image_mesh"')
             return None, None
-        src_path = os.path.join(self.baseline_path, target)
-        dst_path = os.path.join(self.actual_path, target)
+        src_path = os.path.join(baseline_dataset.identifier, target)
+        dst_path = os.path.join(processed_dataset.identifier, target)
 
         flag = False
         if os.path.exists(src_path) and os.path.exists(dst_path) \
@@ -699,9 +703,10 @@ class Metrics:
         from ChamferDistancePytorch.chamfer_python import distChamfer
         # logging.basicConfig(level=logging.DEBUG)
 
-        mesh_baseline = np.asarray(
-            o3d.io.read_triangle_mesh(os.path.join(self.baseline_path, 'textured_mesh.ply'), True).vertices,
-            dtype=np.float32)
+        mesh_baseline = []
+        for mesh in self.baseline_dataset.meshes:
+            mesh_baseline.append(np.asarray(mesh.vertices, dtype=np.float32))
+        mesh_baseline = np.concatenate(mesh_baseline, axis=0)
         mesh_baseline = (mesh_baseline - self.scale_mat[:3, 3][None]) / self.scale_mat[0, 0]
         logging.debug(mesh_baseline.shape)
         mesh_baseline_len = mesh_baseline.shape[0]
@@ -709,9 +714,10 @@ class Metrics:
         bbox_max = np.max(mesh_baseline.reshape((-1, 3)), axis=0)
         bbox_min = np.min(mesh_baseline.reshape((-1, 3)), axis=0)
         logging.debug((bbox_max, bbox_min))
-        mesh_actual = np.asarray(
-            o3d.io.read_triangle_mesh(os.path.join(self.actual_path, 'textured_mesh.ply'), True).vertices,
-            dtype=np.float32)
+        mesh_actual = []
+        for mesh in self.processed_dataset.meshes:
+            mesh_actual.append(np.asarray(mesh.vertices, dtype=np.float32))
+        mesh_actual = np.concatenate(mesh_baseline, axis=0)
         mesh_actual = (mesh_actual - self.scale_mat[:3, 3][None]) / self.scale_mat[0, 0]
         logging.debug(mesh_actual.shape)
         mesh_actual_len = mesh_actual.shape[0]
@@ -733,58 +739,44 @@ class Metrics:
         return (accuracy + completeness) / 2
 
 
-def get_blended_mvs_dataset_pair(usb_path, bmvs_model_name, processed_model_name, rewrite=False):
+def get_blended_mvs_dataset_pair(bmvs_model_name, processed_model_name, external_path=None, rewrite_identifier=None):
     """
 
-    :param usb_path: 'E:/bmvs' or '/media/xrr/UBUNTU 22_0'
     :param bmvs_model_name: e.g. '5a7d3db14989e929563eb153'
     :param processed_model_name: e.g. 'bmvs_dog/preprocessed'
+    :param external_path: 'E:/bmvs' or '/media/xrr/UBUNTU 22_0'
+    :param rewrite_identifier: can be str or int, -1 to rewrite all, can be dtu_model_name
     :return:
     """
-    baseline_dataset = BlendedMVSDataset(usb_path)
-    if rewrite:
-        baseline_dataset.rewrite_all()
+    baseline_dataset = BlendedMVSDataset(external_path)
+    baseline_dataset.set_rewrite(identifier=rewrite_identifier)
     baseline_dataset.preprocess_dataset()
     baseline_dataset.load_single_model(bmvs_model_name)
 
-    processed_dataset = TexturedNeUSDataset('D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS')
+    processed_dataset = TexturedNeuSDataset()
     processed_dataset.process_dataset(processed_model_name)
     processed_dataset.load_model(processed_model_name)
 
     return baseline_dataset, processed_dataset
 
 
-def get_dtu_dataset_pair(usb_path, dtu_model_name, processed_model_name, rewrite=False):
+def get_dtu_dataset_pair(dtu_model_name, processed_model_name, external_path=None, rewrite_identifier=None):
     """
 
-    :param usb_path: 'D:/dataset/dtu', 'E:/dtu' or '/media/xrr/UBUNTU 22_0'
     :param dtu_model_name: e.g. 'scan1'
     :param processed_model_name: e.g. 'scan1'
+    :param external_path: 'D:/dataset/dtu', 'E:/dtu' or '/media/xrr/UBUNTU 22_0'
+    :param rewrite_identifier: can be str or int, -1 to rewrite all, can be dtu_model_name
     :return:
     """
-    baseline_dataset = DTUDataset(usb_path)
-    if rewrite:
-        baseline_dataset.set_rewrite(dtu_model_name)
+    baseline_dataset = DTUDataset(external_path)
+    baseline_dataset.set_rewrite(identifier=rewrite_identifier)
     baseline_dataset.preprocess_dataset()
     baseline_dataset.load_single_model(dtu_model_name)
 
-    processed_dataset = TexturedNeUSDataset('D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS')
+    processed_dataset = TexturedNeuSDataset()
     processed_dataset.process_dataset(processed_model_name)
     processed_dataset.load_model(processed_model_name)
-
-    return baseline_dataset, processed_dataset
-
-
-def get_self_dataset_pair(rewrite=False):
-    baseline_dataset = SelfDataset(
-        'D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/public_data/haibao_small/preprocessed',
-        'D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS/exp/haibao_small/preprocessed'
-    )
-    baseline_dataset.preprocess_dataset(rewrite=rewrite)
-
-    processed_dataset = TexturedNeUSDataset('D:/城大/课程/Year 4 Sem A/CS4514/工程项目/20221224-NeuS')
-    processed_dataset.process_dataset('haibao_small/preprocessed')
-    processed_dataset.load_model('haibao_small/preprocessed')
 
     return baseline_dataset, processed_dataset
 
@@ -800,13 +792,13 @@ def visualize_extrinsic(dataset, radius, height):
 
 
 if __name__ == '__main__':
-    baseline_dataset, processed_dataset = get_blended_mvs_dataset_pair(
-        'E:/bmvs', '5c1af2e2bee9a723c963d019', 'bmvs_dog/preprocessed')
-    visualize_extrinsic(baseline_dataset, radius=0.02, height=0.04)
-    visualize_extrinsic(processed_dataset, radius=0.02, height=0.04)
+    # baseline_dataset, processed_dataset = get_blended_mvs_dataset_pair('5c1af2e2bee9a723c963d019', 'bmvs_dog/preprocessed')
+    baseline_dataset, processed_dataset = get_dtu_dataset_pair('scan1', 'scan1')
+    visualize_extrinsic(baseline_dataset, radius=2, height=4)
+    visualize_extrinsic(processed_dataset, radius=2, height=4)
 
-    metrics = Metrics('TexturedNeUSDataset_processed/scan1',
-                      'DTUDataset_preprocessed/scan1')
+    metrics = Metrics(baseline_dataset.get_single_model_path_root('scan1'),
+                      processed_dataset.get_single_model_path_root('scan1'))
 
     # all_psnr = metrics.PSNR('image')`
     # print(all_psnr)
