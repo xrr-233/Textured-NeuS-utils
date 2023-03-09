@@ -105,13 +105,10 @@ class Dataset:
                 ctr.convert_from_pinhole_camera_parameters(
                     glb['trajectory'].parameters[glb['index']], allow_arbitrary=True)
             else:
-                self.custom_draw_geometry_with_camera_trajectory['vis']. \
-                    register_animation_callback(None)
-            return False
+                self.custom_draw_geometry_with_camera_trajectory['vis'].close()
 
         vis = self.custom_draw_geometry_with_camera_trajectory['vis']
         vis.create_window(width=self.W, height=self.H)
-        print(self.meshes)
         for mesh in self.meshes:
             vis.add_geometry(mesh)
         vis.get_render_option().mesh_show_back_face = mesh_show_back_face
@@ -122,6 +119,7 @@ class Dataset:
 
 class BlendedMVSDataset(Dataset):
     def __init__(self, path_root=None):
+        print('Init BlendedMVSDataset')
         super().__init__()
         self.path_root = 'BlendedMVS_preprocessed'
 
@@ -133,9 +131,9 @@ class BlendedMVSDataset(Dataset):
             image_dirs_full_res = []
             image_dirs_low_res = []
             for filename in os.listdir(path_root):
-                if filename.startswith('dataset_full_res'):
+                if filename.startswith('dataset_full_res') and not filename.endswith('.zip'):
                     image_dirs_full_res.append(os.path.join(path_root, filename))
-                elif filename.startswith('dataset_low_res'):
+                elif filename.startswith('dataset_low_res') and not filename.endswith('.zip'):
                     image_dirs_low_res.append(os.path.join(path_root, filename))
             self.image_dirs.extend(image_dirs_full_res)
             self.image_dirs.extend(image_dirs_low_res)
@@ -313,6 +311,7 @@ class BlendedMVSDataset(Dataset):
 
 class DTUDataset(Dataset):
     def __init__(self, path_root=None):
+        print('Init DTUDataset')
         super().__init__()
         self.path_root = 'DTUDataset_preprocessed'
 
@@ -473,6 +472,7 @@ class DTUDataset(Dataset):
 
 class TexturedNeuSDataset(Dataset):
     def __init__(self, path_root=None):
+        print('Init TexturedNeuSDataset')
         super().__init__()
         self.path_root = 'TexturedNeUSDataset_processed'
 
@@ -792,13 +792,19 @@ def visualize_extrinsic(dataset, radius, height):
 
 
 if __name__ == '__main__':
-    # baseline_dataset, processed_dataset = get_blended_mvs_dataset_pair('5c1af2e2bee9a723c963d019', 'bmvs_dog/preprocessed')
-    baseline_dataset, processed_dataset = get_dtu_dataset_pair('scan1', 'scan1')
-    visualize_extrinsic(baseline_dataset, radius=2, height=4)
-    visualize_extrinsic(processed_dataset, radius=2, height=4)
+    baseline_dtu_dataset = DTUDataset('D:/dataset/dtu')
+    baseline_bmvs_dataset = BlendedMVSDataset('D:/dataset/blendedmvs')
+    baseline_bmvs_dataset.set_rewrite(-1)
+    baseline_dtu_dataset.preprocess_dataset()
+    baseline_bmvs_dataset.preprocess_dataset()
 
-    metrics = Metrics(baseline_dataset.get_single_model_path_root('scan1'),
-                      processed_dataset.get_single_model_path_root('scan1'))
+    # baseline_dataset, processed_dataset = get_blended_mvs_dataset_pair('5c1af2e2bee9a723c963d019', 'bmvs_dog/preprocessed')
+    # baseline_dataset, processed_dataset = get_dtu_dataset_pair('scan1', 'scan1')
+    # visualize_extrinsic(baseline_dataset, radius=2, height=4)
+    # visualize_extrinsic(processed_dataset, radius=2, height=4)
+
+    # metrics = Metrics(baseline_dataset.get_single_model_path_root('scan1'),
+    #                   processed_dataset.get_single_model_path_root('scan1'))
 
     # all_psnr = metrics.PSNR('image')`
     # print(all_psnr)
