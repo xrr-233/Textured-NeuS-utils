@@ -791,16 +791,39 @@ def visualize_extrinsic(dataset, radius, height):
     o3d.visualization.draw_geometries(camera_previews + dataset.meshes)
 
 
+def generate_condor(dataset: Dataset):
+    '''
+    ### JOB ###########################
+    executable      = /home/bsft19/ruixu33/Programs/anaconda3/envs/NeuS/bin/python
+    arguments       = exp_runner.py --mode train --case BlendedMVS_preprocessed/5a7d3db14989e929563eb153
+    # input           =
+    output          = NeuS.out
+    error           = $(output).err
+    log             = NeuS.log
+
+    queue
+    '''
+    with open('run_NeuS.condor', 'w') as f:
+        for i in range(len(dataset)):
+            f.write('### JOB ###########################\n')
+            f.write('executable      = /home/bsft19/ruixu33/Programs/anaconda3/envs/NeuS/bin/python\n')
+            f.write('arguments       = exp_runner.py --mode train --case %s\n' % dataset.get_single_model_path_root(i).replace("\\", "/"))
+            f.write('output          = NeuS.out\n')
+            f.write('error           = $(output).err\n')
+            f.write('log             = NeuS.log\n')
+            f.write('\nqueue\n\n')
+
+
 if __name__ == '__main__':
     baseline_dtu_dataset = DTUDataset('D:/dataset/dtu')
     baseline_bmvs_dataset = BlendedMVSDataset('D:/dataset/blendedmvs')
-    baseline_bmvs_dataset.set_rewrite(-1)
     baseline_dtu_dataset.preprocess_dataset()
     baseline_bmvs_dataset.preprocess_dataset()
 
+    generate_condor(baseline_bmvs_dataset)
     # baseline_dataset, processed_dataset = get_blended_mvs_dataset_pair('5c1af2e2bee9a723c963d019', 'bmvs_dog/preprocessed')
     # baseline_dataset, processed_dataset = get_dtu_dataset_pair('scan1', 'scan1')
-    # visualize_extrinsic(baseline_dataset, radius=2, height=4)
+    # visualize_extrinsic(baseline_bmvs_dataset, radius=0.02, height=0.04)
     # visualize_extrinsic(processed_dataset, radius=2, height=4)
 
     # metrics = Metrics(baseline_dataset.get_single_model_path_root('scan1'),

@@ -11,20 +11,20 @@ The functions of this repo include:
 
 ### Datasets
 
-In our experiment, two types of formal raw datasets can be converted: [DTU](https://roboimagedata.compute.dtu.dk/?page_id=36), and [BlendedMVS](https://github.com/YoYo000/BlendedMVS). For DTU, we simply use the **SampleSet** to test. For BlendedMVS, at least two components are needed: **BlendedMVS low_res/high-res set** (one of them, and even other BlendedMVG datasets can be applied), as well as **textured meshes** supplementary.
+In our experiment, two types of formal raw datasets can be converted: [DTU](https://roboimagedata.compute.dtu.dk/?page_id=36), and [BlendedMVS](https://github.com/YoYo000/BlendedMVS). For DTU, we start from the **SampleSet**, then substitute the **Surfaces** and **Rectified** data to test. For BlendedMVS, at least two components are needed: **BlendedMVS low_res/high-res set** (one of them, and even other BlendedMVG datasets can be applied), as well as **textured meshes** supplementary.
 
 These datasets are very large, and make sure you have enough space to store them. Expected dataset structure is displayed as below:
 
 ```
 dataset
 |---blendedmvs
-	|---dataset_full_res_xx-xx
-	|---dataset_low_res
-	|---dataset
+   (|---dataset_full_res_xx-xx)
+    |---dataset_low_res
+    |---dataset
 |---dtu
-	|---SampleSet
-		|---Matlab evaluation code
-		|---MVS Data
+    |---SampleSet
+        |---Matlab evaluation code
+        |---MVS Data
 		...
 ```
 
