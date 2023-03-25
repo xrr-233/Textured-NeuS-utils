@@ -4,7 +4,8 @@ import shutil
 import cv2
 import numpy as np
 from PIL import Image
-from colmap_utils.colmap_wrapper import run_colmap
+import colmap_utils.sparse_generator as sparse
+import colmap_utils.dense_generator as dense
 from colmap_utils.colmap_read_model import rotmat2qvec
 
 
@@ -41,7 +42,11 @@ root_dir = args.root_dir
 exp_name = args.exp_name
 
 camera_dict = np.load(os.path.join(root_dir, 'cameras_sphere.npz'))
-n_images = len(camera_dict) // 6
+img_dir = sorted(os.listdir(os.path.join(root_dir, 'image')))
+sample_img = Image.open(os.path.join(root_dir, 'image', img_dir[0]))
+W = sample_img.width
+H = sample_img.height
+n_images = len(img_dir)
 world_mats_np = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(n_images)]
 scale_mats_np = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(n_images)]
 
@@ -53,11 +58,6 @@ for scale_mat, world_mat in zip(scale_mats_np, world_mats_np):
     intrinsics, pose = load_K_Rt_from_P(None, P)
     camera_intrinsics.append(intrinsics[:3, :3])
     camera_extrinsics.append(pose)
-
-img_dir = sorted(os.listdir(os.path.join(root_dir, 'image')))
-sample_img = Image.open(os.path.join(root_dir, 'image', img_dir[0]))
-W = sample_img.width
-H = sample_img.height
 
 os.makedirs('neus2llff_preprocessed', exist_ok=True)
 new_dir = os.path.join(os.getcwd(), 'neus2llff_preprocessed', exp_name)
@@ -86,6 +86,6 @@ with open(os.path.join(new_dir, 'sparse', '0_raw', 'images.txt'), 'w') as f:
 with open(os.path.join(new_dir, 'sparse', '0_raw', 'points3D.txt'), 'w') as f:
     pass
 
-run_colmap(new_dir)
-
+sparse.run_colmap(new_dir)
 shutil.rmtree(os.path.join(new_dir, 'sparse', '0_raw'))
+dense.run_colmap(new_dir)

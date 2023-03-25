@@ -7,6 +7,18 @@ The functions of this repo include:
 1. Preprocess formal raw datasets into acceptable input form of NeuS.
 2. Conduct metrics comparison to demonstrate the effect (in progress).
 
+## Pre-requisite
+
+We use COLMAP to reconstruct the Poisson reconstruction. To access COLMAP, we need to install by built-from-source with CUDA. Please refer to https://colmap.github.io/install.html.
+
+When using CMake to build COLMAP, one important command is (RTX3070 for example):
+
+```
+cmake .. -GNinja -DCMAKE_CUDA_ARCHITECTURES=75
+```
+
+which means we use sm_75 arch. And for Ubuntu 22.04, some extra operation needs to be done.
+
 ## Details
 
 ### Datasets
@@ -29,7 +41,6 @@ dataset
 ```
 
 ### Code (In progress)
-
 The main code is `test.py`. For first-time execution, the external path should be identified to make an initial conversion of raw datasets. For example:
 
 ```

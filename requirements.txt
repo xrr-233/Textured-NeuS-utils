@@ -1,6 +1,6 @@
 open3d
 matplotlib
-opencv-python
+opencv-python==4.1.1.26
 lpips
 trimesh
 numpy

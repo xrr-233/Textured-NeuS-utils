@@ -69,5 +69,3 @@ def sample_bmvs():
     for case in os.listdir(root_path):
         images = os.listdir(os.path.join(root_path, case, 'blended_images'))
         shutil.copy(os.path.join(root_path, case, 'blended_images', images[1]), os.path.join('sample_bmvs', f'{case}.png'))
-
-sample_bmvs()
