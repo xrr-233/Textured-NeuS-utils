@@ -1,4 +1,5 @@
 import os
+import shutil
 import numpy as np
 import cv2
 from PIL import Image
@@ -57,3 +58,16 @@ def integrate_imgs():
         res = img & mask
         res = Image.fromarray(res)
         res.save(os.path.join(res_path, imgs_dir[i]))
+
+def sample_bmvs():
+    """
+    Used to find small object scenes in BlendedMVS.
+    """
+    root_path = "D:\CityU\Courses\Year4SemA\CS4514\Projects\BlendedMVS"
+    os.makedirs('sample_bmvs', exist_ok=True)
+
+    for case in os.listdir(root_path):
+        images = os.listdir(os.path.join(root_path, case, 'blended_images'))
+        shutil.copy(os.path.join(root_path, case, 'blended_images', images[1]), os.path.join('sample_bmvs', f'{case}.png'))
+
+sample_bmvs()

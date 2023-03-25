@@ -6,3 +6,4 @@ DTUDataset_preprocessed
 SelfDataset_preprocessed
 TexturedNeUSDataset_processed
 ChamferDistancePytorch
+sample_bmvs

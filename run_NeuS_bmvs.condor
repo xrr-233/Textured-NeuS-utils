@@ -1,0 +1,134 @@
+### JOB ###########################
+executable      = /home/bsft19/ruixu33/Programs/anaconda3/envs/NeuS/bin/python
+arguments       = exp_runner.py --mode train --case BlendedMVS_preprocessed/5a7d3db14989e929563eb153
+output          = NeuS.out
+error           = $(output).err
+log             = NeuS.log
+
+queue
+
+### JOB ###########################
+executable      = /home/bsft19/ruixu33/Programs/anaconda3/envs/NeuS/bin/python
+arguments       = exp_runner.py --mode train --case BlendedMVS_preprocessed/5a969eea91dfc339a9a3ad2c
+output          = NeuS.out
+error           = $(output).err
+log             = NeuS.log
+
+queue
+
+### JOB ###########################
+executable      = /home/bsft19/ruixu33/Programs/anaconda3/envs/NeuS/bin/python
+arguments       = exp_runner.py --mode train --case BlendedMVS_preprocessed/5c1af2e2bee9a723c963d019
+output          = NeuS.out
+error           = $(output).err
+log             = NeuS.log
+
+queue
+
+### JOB ###########################
+executable      = /home/bsft19/ruixu33/Programs/anaconda3/envs/NeuS/bin/python
+arguments       = exp_runner.py --mode train --case BlendedMVS_preprocessed/5c34529873a8df509ae57b58
+output          = NeuS.out
+error           = $(output).err
+log             = NeuS.log
+
+queue
+
+### JOB ###########################
+executable      = /home/bsft19/ruixu33/Programs/anaconda3/envs/NeuS/bin/python
+arguments       = exp_runner.py --mode train --case BlendedMVS_preprocessed/5adc6bd52430a05ecb2ffb85
+output          = NeuS.out
+error           = $(output).err
+log             = NeuS.log
+
+queue
+
+### JOB ###########################
+executable      = /home/bsft19/ruixu33/Programs/anaconda3/envs/NeuS/bin/python
+arguments       = exp_runner.py --mode train --case BlendedMVS_preprocessed/59350ca084b7f26bf5ce6eb8
+output          = NeuS.out
+error           = $(output).err
+log             = NeuS.log
+
+queue
+
+### JOB ###########################
+executable      = /home/bsft19/ruixu33/Programs/anaconda3/envs/NeuS/bin/python
+arguments       = exp_runner.py --mode train --case BlendedMVS_preprocessed/5bcf979a6d5f586b95c258cd
+output          = NeuS.out
+error           = $(output).err
+log             = NeuS.log
+
+queue
+
+### JOB ###########################
+executable      = /home/bsft19/ruixu33/Programs/anaconda3/envs/NeuS/bin/python
+arguments       = exp_runner.py --mode train --case BlendedMVS_preprocessed/5bce7ac9ca24970bce4934b6
+output          = NeuS.out
+error           = $(output).err
+log             = NeuS.log
+
+queue
+
+### JOB ###########################
+executable      = /home/bsft19/ruixu33/Programs/anaconda3/envs/NeuS/bin/python
+arguments       = exp_runner.py --mode train --case BlendedMVS_preprocessed/5beb6e66abd34c35e18e66b9
+output          = NeuS.out
+error           = $(output).err
+log             = NeuS.log
+
+queue
+
+### JOB ###########################
+executable      = /home/bsft19/ruixu33/Programs/anaconda3/envs/NeuS/bin/python
+arguments       = exp_runner.py --mode train --case BlendedMVS_preprocessed/5be883a4f98cee15019d5b83
+output          = NeuS.out
+error           = $(output).err
+log             = NeuS.log
+
+queue
+
+### JOB ###########################
+executable      = /home/bsft19/ruixu33/Programs/anaconda3/envs/NeuS/bin/python
+arguments       = exp_runner.py --mode train --case BlendedMVS_preprocessed/5b4933abf2b5f44e95de482a
+output          = NeuS.out
+error           = $(output).err
+log             = NeuS.log
+
+queue
+
+### JOB ###########################
+executable      = /home/bsft19/ruixu33/Programs/anaconda3/envs/NeuS/bin/python
+arguments       = exp_runner.py --mode train --case BlendedMVS_preprocessed/5ab85f1dac4291329b17cb50
+output          = NeuS.out
+error           = $(output).err
+log             = NeuS.log
+
+queue
+
+### JOB ###########################
+executable      = /home/bsft19/ruixu33/Programs/anaconda3/envs/NeuS/bin/python
+arguments       = exp_runner.py --mode train --case BlendedMVS_preprocessed/5b22269758e2823a67a3bd03
+output          = NeuS.out
+error           = $(output).err
+log             = NeuS.log
+
+queue
+
+### JOB ###########################
+executable      = /home/bsft19/ruixu33/Programs/anaconda3/envs/NeuS/bin/python
+arguments       = exp_runner.py --mode train --case BlendedMVS_preprocessed/5a3ca9cb270f0e3f14d0eddb
+output          = NeuS.out
+error           = $(output).err
+log             = NeuS.log
+
+queue
+
+### JOB ###########################
+executable      = /home/bsft19/ruixu33/Programs/anaconda3/envs/NeuS/bin/python
+arguments       = exp_runner.py --mode train --case BlendedMVS_preprocessed/5a489fb1c7dab83a7d7b1070
+output          = NeuS.out
+error           = $(output).err
+log             = NeuS.log
+
+queue

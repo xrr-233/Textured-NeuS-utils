@@ -536,8 +536,9 @@ class TexturedNeuSDataset(Dataset):
                 # endregion
 
                 # region Process image
-                # 由于在本机渲染过于慢，请手动在高配GPU服务器上高batch训练
-                os.makedirs(os.path.join(self.path_root, identifier, 'image'), exist_ok=True)
+                # However, we give up rendering comparison, so this function is deprecated
+                shutil.copytree(os.path.join(path_public, 'image'),
+                                os.path.join(self.path_root, identifier, 'image'))
                 self.load_camera_parameters(path_public)
                 '''
                 self.runner = Runner('', self.n_images, self.W, self.H)
@@ -548,7 +549,7 @@ class TexturedNeuSDataset(Dataset):
                 # endregion
 
                 # region Process mesh
-                shutil.copy(os.path.join(path_exp, 'womask_sphere', 'meshes', 'vertex_color.ply'),
+                shutil.copy(os.path.join(path_exp, 'womask_sphere', 'meshes', 'final_result.ply'),
                             os.path.join(self.path_root, identifier, 'textured_mesh.ply'))
                 os.makedirs(os.path.join(self.path_root, identifier, 'image_mesh'), exist_ok=True)
                 self.load_model(identifier)
@@ -815,16 +816,16 @@ def generate_condor(dataset: Dataset):
 
 
 if __name__ == '__main__':
-    baseline_dtu_dataset = DTUDataset('D:/dataset/dtu')
-    baseline_bmvs_dataset = BlendedMVSDataset('D:/dataset/blendedmvs')
-    baseline_dtu_dataset.preprocess_dataset()
-    baseline_bmvs_dataset.preprocess_dataset()
+    baseline_dataset = DTUDataset()
+    baseline_dataset.preprocess_dataset()
+    baseline_dataset.load_single_model('scan24')
 
-    generate_condor(baseline_bmvs_dataset)
-    # baseline_dataset, processed_dataset = get_blended_mvs_dataset_pair('5c1af2e2bee9a723c963d019', 'bmvs_dog/preprocessed')
-    # baseline_dataset, processed_dataset = get_dtu_dataset_pair('scan1', 'scan1')
-    # visualize_extrinsic(baseline_bmvs_dataset, radius=0.02, height=0.04)
-    # visualize_extrinsic(processed_dataset, radius=2, height=4)
+    processed_dataset = TexturedNeuSDataset('external_NeuS')
+    processed_dataset.process_dataset('DTUDataset_preprocessed/scan24')
+    processed_dataset.load_model('DTUDataset_preprocessed/scan24')
+
+    visualize_extrinsic(baseline_dataset, radius=0.02, height=0.04)
+    visualize_extrinsic(processed_dataset, radius=0.02, height=0.04)
 
     # metrics = Metrics(baseline_dataset.get_single_model_path_root('scan1'),
     #                   processed_dataset.get_single_model_path_root('scan1'))
