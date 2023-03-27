@@ -441,10 +441,11 @@ class DTUDataset(Dataset):
                             cam_dict['world_mat_inv_{}'.format(index)] = np.linalg.inv(world_mat)
                             index += 1
 
-                    src_root = os.path.join(self.all_models_root, 'Surfaces', 'camp')
+                    src_root = os.path.join(self.all_models_root, 'Surfaces', 'tola')
                     vertices = []
                     for f in os.listdir(src_root):
                         if int(f[4:7]) == int(filename[4:]):
+                            print(f)
                             shutil.copy(os.path.join(src_root, f),
                                         os.path.join(self.path_root, filename, 'textured_mesh.ply'))
                             mesh = o3d.io.read_triangle_mesh(os.path.join(src_root, f), True)
@@ -537,7 +538,8 @@ class TexturedNeuSDataset(Dataset):
 
                 # region Process image
                 # 由于在本机渲染过于慢，请手动在高配GPU服务器上高batch训练
-                os.makedirs(os.path.join(self.path_root, identifier, 'image'), exist_ok=True)
+                shutil.copytree(os.path.join(path_public, 'image'),
+                                os.path.join(self.path_root, identifier, 'image'))
                 self.load_camera_parameters(path_public)
                 '''
                 self.runner = Runner('', self.n_images, self.W, self.H)
@@ -548,7 +550,7 @@ class TexturedNeuSDataset(Dataset):
                 # endregion
 
                 # region Process mesh
-                shutil.copy(os.path.join(path_exp, 'womask_sphere', 'meshes', 'vertex_color.ply'),
+                shutil.copy(os.path.join(path_exp, 'womask_sphere', 'meshes', 'final_result.ply'),
                             os.path.join(self.path_root, identifier, 'textured_mesh.ply'))
                 os.makedirs(os.path.join(self.path_root, identifier, 'image_mesh'), exist_ok=True)
                 self.load_model(identifier)
@@ -815,16 +817,28 @@ def generate_condor(dataset: Dataset):
 
 
 if __name__ == '__main__':
-    baseline_dtu_dataset = DTUDataset('D:/dataset/dtu')
-    baseline_bmvs_dataset = BlendedMVSDataset('D:/dataset/blendedmvs')
-    baseline_dtu_dataset.preprocess_dataset()
-    baseline_bmvs_dataset.preprocess_dataset()
+    processed_dataset = TexturedNeuSDataset('external_NeuS')
+    all_neus = os.listdir(os.path.join('external_NeuS', 'exp', 'DTUDataset_preprocessed'))
+    already = os.listdir(os.path.join('TexturedNeUSDataset_processed', 'DTUDataset_preprocessed'))
+    # scan55
+    for case in all_neus:
+        if not case.endswith('.zip') and not case == 'scan55' and not case == 'scan65' and not case == 'scan97' and case not in already:
+            processed_dataset.process_dataset(f'DTUDataset_preprocessed/{case}', rewrite=True)
 
-    generate_condor(baseline_bmvs_dataset)
+    visualize_extrinsic(processed_dataset, radius=0.02, height=0.04)
+
+    # baseline_dtu_dataset = DTUDataset('D:\dataset\dtu')
+    # baseline_bmvs_dataset = BlendedMVSDataset()
+    # baseline_dtu_dataset.preprocess_dataset()
+    # baseline_bmvs_dataset.preprocess_dataset()
+
+    # generate_condor(baseline_bmvs_dataset)
     # baseline_dataset, processed_dataset = get_blended_mvs_dataset_pair('5c1af2e2bee9a723c963d019', 'bmvs_dog/preprocessed')
     # baseline_dataset, processed_dataset = get_dtu_dataset_pair('scan1', 'scan1')
+    # baseline_dtu_dataset.load_single_model(0)
+    # visualize_extrinsic(baseline_dtu_dataset, radius=2, height=4)
+    # baseline_bmvs_dataset.load_single_model('5a7d3db14989e929563eb153')
     # visualize_extrinsic(baseline_bmvs_dataset, radius=0.02, height=0.04)
-    # visualize_extrinsic(processed_dataset, radius=2, height=4)
 
     # metrics = Metrics(baseline_dataset.get_single_model_path_root('scan1'),
     #                   processed_dataset.get_single_model_path_root('scan1'))
