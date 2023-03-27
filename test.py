@@ -12,7 +12,7 @@ from PIL import Image
 from tqdm import tqdm
 from skimage.metrics import peak_signal_noise_ratio as psnr
 from skimage.metrics import structural_similarity as ssim
-
+from timeit import default_timer as timer
 from runner import Runner
 from utils import load_K_Rt_from_P
 
@@ -559,19 +559,46 @@ class TexturedNeuSDataset(Dataset):
 
 
 class Metrics:
-    def __init__(self, baseline_dataset: Dataset, processed_dataset: Dataset):
+    def __init__(self, baseline_dataset, processed_dataset):
+        """
+        By identifying a pair of structured dataset, conduct comparison and give metrics.
+
+        :param baseline_dataset: path str
+        :param processed_dataset: path str
+        """
         self.baseline_dataset = baseline_dataset
         self.processed_dataset = processed_dataset
 
-        camera_dict = np.load(os.path.join(baseline_dataset.identifier, 'cameras_sphere.npz'))
+        camera_dict = np.load(os.path.join(baseline_dataset, 'cameras_sphere.npz'))
         self.scale_mat = camera_dict['scale_mat_0'].astype(np.float32)
+
+        self.mesh_baseline = self.load_mesh(self.baseline_dataset)
+        self.mesh_actual = self.load_mesh(self.processed_dataset)
+
+    def load_mesh(self, src):
+        meshes = []
+        if os.path.exists(os.path.join(src, 'textured_mesh.ply')):
+            meshes.append(o3d.io.read_triangle_mesh(os.path.join(src, 'textured_mesh.ply'), True))
+        elif os.path.exists(os.path.join(src, 'textured_mesh')):
+            for f in os.listdir(os.path.join(src, 'textured_mesh')):
+                if f.endswith('.obj'):
+                    mesh = o3d.io.read_triangle_mesh(os.path.join(src, 'textured_mesh', f), True)
+                    # mesh.compute_vertex_normals()  # allow light effect
+                    meshes.append(mesh)
+
+        ret_meshes = []
+        for mesh in meshes:
+            ret_meshes.append(np.asarray(mesh.vertices, dtype=np.float32))
+        ret_meshes = np.concatenate(ret_meshes, axis=0)
+
+        return ret_meshes
 
     def check_image_dir(self, target):
         if not target == 'image' and not target == 'image_mesh':
             print('Parameter "target" only accepts "image" or "image_mesh"')
             return None, None
-        src_path = os.path.join(baseline_dataset.identifier, target)
-        dst_path = os.path.join(processed_dataset.identifier, target)
+        src_path = os.path.join(self.baseline_dataset, target)
+        dst_path = os.path.join(self.processed_dataset, target)
 
         flag = False
         if os.path.exists(src_path) and os.path.exists(dst_path) \
@@ -703,29 +730,23 @@ class Metrics:
 
     def ChamferL1(self):
         from ChamferDistancePytorch.chamfer_python import distChamfer
-        # logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(level=logging.DEBUG)
 
-        mesh_baseline = []
-        for mesh in self.baseline_dataset.meshes:
-            mesh_baseline.append(np.asarray(mesh.vertices, dtype=np.float32))
-        mesh_baseline = np.concatenate(mesh_baseline, axis=0)
-        mesh_baseline = (mesh_baseline - self.scale_mat[:3, 3][None]) / self.scale_mat[0, 0]
+        mesh_baseline = (self.mesh_baseline - self.scale_mat[:3, 3][None]) / self.scale_mat[0, 0]
         logging.debug(mesh_baseline.shape)
         mesh_baseline_len = mesh_baseline.shape[0]
         mesh_baseline = self.split_batch(mesh_baseline)
         bbox_max = np.max(mesh_baseline.reshape((-1, 3)), axis=0)
         bbox_min = np.min(mesh_baseline.reshape((-1, 3)), axis=0)
         logging.debug((bbox_max, bbox_min))
-        mesh_actual = []
-        for mesh in self.processed_dataset.meshes:
-            mesh_actual.append(np.asarray(mesh.vertices, dtype=np.float32))
-        mesh_actual = np.concatenate(mesh_baseline, axis=0)
-        mesh_actual = (mesh_actual - self.scale_mat[:3, 3][None]) / self.scale_mat[0, 0]
+
+        mesh_actual = (self.mesh_actual - self.scale_mat[:3, 3][None]) / self.scale_mat[0, 0]
         logging.debug(mesh_actual.shape)
         mesh_actual_len = mesh_actual.shape[0]
         mesh_actual = self.split_batch(mesh_actual)
         bbox_max = np.max(mesh_actual.reshape((-1, 3)), axis=0)
         bbox_min = np.min(mesh_actual.reshape((-1, 3)), axis=0)
+
         logging.debug((bbox_max, bbox_min))
         logging.debug(mesh_baseline.shape)
         logging.debug(mesh_actual.shape)
@@ -737,8 +758,7 @@ class Metrics:
         logging.debug(dist2)
         accuracy = np.average(dist1)
         completeness = np.average(dist2)
-        logging.debug(accuracy, completeness)
-        return (accuracy + completeness) / 2
+        return accuracy, completeness
 
 
 def get_blended_mvs_dataset_pair(bmvs_model_name, processed_model_name, external_path=None, rewrite_identifier=None):
@@ -825,52 +845,49 @@ if __name__ == '__main__':
     #     if not case.endswith('.zip') and not case == 'scan55' and not case == 'scan65' and not case == 'scan97' and case not in already:
     #         processed_dataset.process_dataset(f'DTUDataset_preprocessed/{case}', rewrite=True)
 
-    processed_dataset = TexturedNeuSDataset('external_NeuS')
-    all_neus = os.listdir(os.path.join('external_NeuS', 'exp', 'BlendedMVS_preprocessed'))
-    needed = [
-        '5a7d3db14989e929563eb153',
-        '5a969eea91dfc339a9a3ad2c',
-        '5c1af2e2bee9a723c963d019',
-        '5c34529873a8df509ae57b58',
-        '5adc6bd52430a05ecb2ffb85',
-        '59350ca084b7f26bf5ce6eb8',
-        '5bcf979a6d5f586b95c258cd',
-        '5bce7ac9ca24970bce4934b6',
-        '5beb6e66abd34c35e18e66b9',
-        '5be883a4f98cee15019d5b83',
-        '5b4933abf2b5f44e95de482a',
-        '5ab85f1dac4291329b17cb50',
-        '5b22269758e2823a67a3bd03',
-        '5a3ca9cb270f0e3f14d0eddb',
-        '5a489fb1c7dab83a7d7b1070'
-    ]
-    for case in all_neus:
-        if not case.endswith('.zip') and case in needed:
-            processed_dataset.process_dataset(f'BlendedMVS_preprocessed/{case}', rewrite=True)
+    # processed_dataset = TexturedNeuSDataset('external_NeuS')
+    # all_neus = os.listdir(os.path.join('external_NeuS', 'exp', 'BlendedMVS_preprocessed'))
+    # needed = [
+    #     '5a7d3db14989e929563eb153',
+    #     '5a969eea91dfc339a9a3ad2c',
+    #     '5c1af2e2bee9a723c963d019',
+    #     '5c34529873a8df509ae57b58',
+    #     '5adc6bd52430a05ecb2ffb85',
+    #     '59350ca084b7f26bf5ce6eb8',
+    #     '5bcf979a6d5f586b95c258cd',
+    #     '5bce7ac9ca24970bce4934b6',
+    #     '5beb6e66abd34c35e18e66b9',
+    #     '5be883a4f98cee15019d5b83',
+    #     '5b4933abf2b5f44e95de482a',
+    #     '5ab85f1dac4291329b17cb50',
+    #     '5b22269758e2823a67a3bd03',
+    #     '5a3ca9cb270f0e3f14d0eddb',
+    #     '5a489fb1c7dab83a7d7b1070'
+    # ]
+    # for case in all_neus:
+    #     if not case.endswith('.zip') and case in needed:
+    #         processed_dataset.process_dataset(f'BlendedMVS_preprocessed/{case}', rewrite=True)
 
-    visualize_extrinsic(processed_dataset, radius=0.02, height=0.04)
+    # visualize_extrinsic(processed_dataset, radius=0.02, height=0.04)
 
-    # baseline_dtu_dataset = DTUDataset('D:\dataset\dtu')
-    # baseline_bmvs_dataset = BlendedMVSDataset()
-    # baseline_dtu_dataset.preprocess_dataset()
-    # baseline_bmvs_dataset.preprocess_dataset()
+    start = timer()
 
-    # generate_condor(baseline_bmvs_dataset)
-    # baseline_dataset, processed_dataset = get_blended_mvs_dataset_pair('5c1af2e2bee9a723c963d019', 'bmvs_dog/preprocessed')
-    # baseline_dataset, processed_dataset = get_dtu_dataset_pair('scan1', 'scan1')
-    # baseline_dtu_dataset.load_single_model(0)
-    # visualize_extrinsic(baseline_dtu_dataset, radius=2, height=4)
-    # baseline_bmvs_dataset.load_single_model('5a7d3db14989e929563eb153')
-    # visualize_extrinsic(baseline_bmvs_dataset, radius=0.02, height=0.04)
+    metrics = Metrics('/public/ruixu33/public_data/DTUDataset_preprocessed/scan24',
+                      '/public/ruixu33/TexturedNeUSDataset_processed/DTUDataset_preprocessed/scan24')
 
-    # metrics = Metrics(baseline_dataset.get_single_model_path_root('scan1'),
-    #                   processed_dataset.get_single_model_path_root('scan1'))
+    all_psnr = metrics.PSNR('image_mesh')
+    print(f'All PSNR: {all_psnr}')
+    print(f'Avg PSNR: {np.average(all_psnr)}')
+    all_ssim = metrics.SSIM('image_mesh')
+    print(f'All SSIM: {all_ssim}')
+    print(f'Avg SSIM: {np.average(all_ssim)}')
+    all_lpips = metrics.LPIPS('image_mesh')
+    print(f'All LPIPS: {all_lpips}')
+    print(f'Avg LPIPS: {np.average(all_lpips)}')
+    acc, comp = metrics.ChamferL1()
+    print(f'Accuracy: {acc}')
+    print(f'Completeness: {comp}')
+    print(f'ChamferL1: {(acc + comp) / 2}')
 
-    # all_psnr = metrics.PSNR('image')`
-    # print(all_psnr)
-    # all_ssim = metrics.SSIM('image')
-    # print(all_ssim)
-    # all_lpips = metrics.LPIPS('image')
-    # print(all_lpips)
-    # chamfer = metrics.ChamferL1()
-    # print(chamfer)
+    end = timer()
+    print(f'Elapsed time: {end - start} s')

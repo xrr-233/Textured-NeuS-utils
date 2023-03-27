@@ -45,6 +45,8 @@ After preprocessing, the code will generate the preprocessed models with the str
 
 We also re-organize the structure of the results of NeuS for convenience of metrics computing.
 
+**Note:** To compute the ChamferL1 distance, please clone the repo https://github.com/ThibaultGROUEIX/ChamferDistancePytorch into our project.
+
 ### Metrics
 
 To demonstrate the high fidelity of the exported 3D model, we intend to judge the performance in two aspects, namely, novel view rendering and 3D reconstruction. We compare the qualities of rendered images, as well as rendered mesh images, by comparing the **PSNR, SSIM, and LPIPS** with the baseline images. Simultaneously, we analyze the **Chamfer-L1 Distance** between the processed mesh and baseline mesh.
