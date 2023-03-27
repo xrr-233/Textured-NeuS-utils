@@ -817,13 +817,36 @@ def generate_condor(dataset: Dataset):
 
 
 if __name__ == '__main__':
+    # processed_dataset = TexturedNeuSDataset('external_NeuS')
+    # all_neus = os.listdir(os.path.join('external_NeuS', 'exp', 'DTUDataset_preprocessed'))
+    # already = os.listdir(os.path.join('TexturedNeUSDataset_processed', 'DTUDataset_preprocessed'))
+    # # scan55 scan65 scan97
+    # for case in all_neus:
+    #     if not case.endswith('.zip') and not case == 'scan55' and not case == 'scan65' and not case == 'scan97' and case not in already:
+    #         processed_dataset.process_dataset(f'DTUDataset_preprocessed/{case}', rewrite=True)
+
     processed_dataset = TexturedNeuSDataset('external_NeuS')
-    all_neus = os.listdir(os.path.join('external_NeuS', 'exp', 'DTUDataset_preprocessed'))
-    already = os.listdir(os.path.join('TexturedNeUSDataset_processed', 'DTUDataset_preprocessed'))
-    # scan55
+    all_neus = os.listdir(os.path.join('external_NeuS', 'exp', 'BlendedMVS_preprocessed'))
+    needed = [
+        '5a7d3db14989e929563eb153',
+        '5a969eea91dfc339a9a3ad2c',
+        '5c1af2e2bee9a723c963d019',
+        '5c34529873a8df509ae57b58',
+        '5adc6bd52430a05ecb2ffb85',
+        '59350ca084b7f26bf5ce6eb8',
+        '5bcf979a6d5f586b95c258cd',
+        '5bce7ac9ca24970bce4934b6',
+        '5beb6e66abd34c35e18e66b9',
+        '5be883a4f98cee15019d5b83',
+        '5b4933abf2b5f44e95de482a',
+        '5ab85f1dac4291329b17cb50',
+        '5b22269758e2823a67a3bd03',
+        '5a3ca9cb270f0e3f14d0eddb',
+        '5a489fb1c7dab83a7d7b1070'
+    ]
     for case in all_neus:
-        if not case.endswith('.zip') and not case == 'scan55' and not case == 'scan65' and not case == 'scan97' and case not in already:
-            processed_dataset.process_dataset(f'DTUDataset_preprocessed/{case}', rewrite=True)
+        if not case.endswith('.zip') and case in needed:
+            processed_dataset.process_dataset(f'BlendedMVS_preprocessed/{case}', rewrite=True)
 
     visualize_extrinsic(processed_dataset, radius=0.02, height=0.04)
 
