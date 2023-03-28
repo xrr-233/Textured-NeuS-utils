@@ -821,7 +821,7 @@ if __name__ == '__main__':
     baseline_dataset.load_single_model('scan24')
 
     processed_dataset = TexturedNeuSDataset('external_NeuS')
-    processed_dataset.process_dataset('DTUDataset_preprocessed/scan24')
+    processed_dataset.process_dataset('DTUDataset_preprocessed/scan24', rewrite=True)
     processed_dataset.load_model('DTUDataset_preprocessed/scan24')
 
     visualize_extrinsic(baseline_dataset, radius=0.02, height=0.04)
