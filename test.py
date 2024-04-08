@@ -218,7 +218,6 @@ class BlendedMVSDataset(Dataset):
 
     def preprocess_dataset(self):
         if self.from_external:
-            # device = o3d.core.Device("CPU:0")
             os.makedirs(self.path_root, exist_ok=True)
 
             for i in tqdm(range(self.__len__())):
@@ -236,7 +235,7 @@ class BlendedMVSDataset(Dataset):
                     shutil.copytree(os.path.join(self.textured_mesh_dir, filename, 'textured_mesh'),
                                     os.path.join(self.path_root, filename, 'textured_mesh'))
 
-                    # region Process image
+                    # region Process gt image
                     if 'full' in filename_root:
                         filename_root = os.path.join(filename_root, filename, filename, filename)
                     elif 'low' in filename_root:
@@ -397,13 +396,21 @@ class DTUDataset(Dataset):
                 if self.rewrite[i]:
                     if os.path.exists(f'{self.path_root}/{filename}'):
                         shutil.rmtree(f'{self.path_root}/{filename}')
+
+                # There are three reconstruction methods: camp (Campbell N.D.), furu (Furukawa), and tola (Tola E.).
+                # In IDR the metrics is measured using furu.
+                file_template = f'furu{filename[4:].zfill(3)}_l3_surf_11.ply'  # temporarily not trimmed
+                if not os.path.exists(os.path.join(self.all_models_root, 'Surfaces', file_template[:4], file_template)):
+                    print(f'{filename} does not exist in {file_template}!')
+                    continue
+
                 if not os.path.exists(f'{self.path_root}/{filename}'):
                     os.makedirs(f'{self.path_root}/{filename}', exist_ok=True)
                     os.makedirs(f'{self.path_root}/{filename}/image', exist_ok=True)
                     os.makedirs(f'{self.path_root}/{filename}/image_mesh', exist_ok=True)
                     os.makedirs(f'{self.path_root}/{filename}/mask', exist_ok=True)
 
-                    # region Process image
+                    # region Process gt image
                     src_root = os.path.join(self.all_models_root, 'Rectified', filename)
                     dst_root = f'{self.path_root}/{filename}'
                     index = 0
@@ -441,16 +448,14 @@ class DTUDataset(Dataset):
                             cam_dict['world_mat_inv_{}'.format(index)] = np.linalg.inv(world_mat)
                             index += 1
 
-                    src_root = os.path.join(self.all_models_root, 'Surfaces', 'camp')
-                    vertices = []
-                    for f in os.listdir(src_root):
-                        if int(f[4:7]) == int(filename[4:]):
-                            shutil.copy(os.path.join(src_root, f),
-                                        os.path.join(self.path_root, filename, 'textured_mesh.ply'))
-                            mesh = o3d.io.read_triangle_mesh(os.path.join(src_root, f), True)
-                            mesh.compute_vertex_normals()  # allow light effect
-                            vertices.append(np.asarray(mesh.vertices))
-                    vertices = np.concatenate(vertices, axis=0)
+                    src_root = os.path.join(self.all_models_root, 'Surfaces', 'furu')
+                    file_template = f'furu{filename[4:].zfill(3)}_l3_surf_11.ply'
+                    shutil.copy(os.path.join(src_root, file_template),
+                                os.path.join(self.path_root, filename, 'textured_mesh.ply'))
+
+                    mesh = o3d.io.read_triangle_mesh(os.path.join(src_root, file_template), True)
+                    mesh.compute_vertex_normals()  # allow light effect
+                    vertices = np.asarray(mesh.vertices)
                     bbox_max = np.max(vertices, axis=0)
                     bbox_min = np.min(vertices, axis=0)
                     center = (bbox_max + bbox_min) * 0.5
@@ -569,8 +574,8 @@ class Metrics:
         if not target == 'image' and not target == 'image_mesh':
             print('Parameter "target" only accepts "image" or "image_mesh"')
             return None, None
-        src_path = os.path.join(baseline_dataset.identifier, target)
-        dst_path = os.path.join(processed_dataset.identifier, target)
+        src_path = os.path.join(self.baseline_dataset.identifier, target)
+        dst_path = os.path.join(self.processed_dataset.identifier, target)
 
         flag = False
         if os.path.exists(src_path) and os.path.exists(dst_path) \
@@ -816,16 +821,17 @@ def generate_condor(dataset: Dataset):
 
 
 if __name__ == '__main__':
-    baseline_dataset = DTUDataset()
+    baseline_dataset = DTUDataset('dataset/dtu')
+    baseline_dataset.set_rewrite(-1)
     baseline_dataset.preprocess_dataset()
-    baseline_dataset.load_single_model('scan24')
-
-    processed_dataset = TexturedNeuSDataset('external_NeuS')
-    processed_dataset.process_dataset('DTUDataset_preprocessed/scan24', rewrite=True)
-    processed_dataset.load_model('DTUDataset_preprocessed/scan24')
-
-    visualize_extrinsic(baseline_dataset, radius=0.02, height=0.04)
-    visualize_extrinsic(processed_dataset, radius=0.02, height=0.04)
+    # baseline_dataset.load_single_model('scan24')
+    #
+    # processed_dataset = TexturedNeuSDataset('external_NeuS')
+    # processed_dataset.process_dataset('DTUDataset_preprocessed/scan24', rewrite=True)
+    # processed_dataset.load_model('DTUDataset_preprocessed/scan24')
+    #
+    # visualize_extrinsic(baseline_dataset, radius=0.02, height=0.04)
+    # visualize_extrinsic(processed_dataset, radius=0.02, height=0.04)
 
     # metrics = Metrics(baseline_dataset.get_single_model_path_root('scan1'),
     #                   processed_dataset.get_single_model_path_root('scan1'))

@@ -9,15 +9,7 @@ The functions of this repo include:
 
 ## Pre-requisite
 
-We use COLMAP to reconstruct the Poisson reconstruction. To access COLMAP, we need to install by built-from-source with CUDA. Please refer to https://colmap.github.io/install.html.
-
-When using CMake to build COLMAP, one important command is (RTX3070 for example):
-
-```
-cmake .. -GNinja -DCMAKE_CUDA_ARCHITECTURES=75
-```
-
-which means we use sm_75 arch. And for Ubuntu 22.04, some extra operation needs to be done.
+We use COLMAP to reconstruct the Poisson reconstruction. To access COLMAP, we need to install by built-from-source with CUDA. Please refer to https://colmap.github.io/install.html. For Windows user, it is recommended to use vcpkg to install all packages except for COLMAP, and then install COLMAP by cmake.
 
 ## Details
 
